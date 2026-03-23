@@ -394,7 +394,7 @@ class JUPEDSIM_OT_load_simulation(Operator):
             self._timed_start("create_agents")
 
     def _step_create_agents(self, context: Context) -> bool:
-        """Create a small batch of agent objects per tick."""
+        """Create a batch of agent objects per tick."""
         if self._agent_groups is None:
             return True
         if self._agent_index == 0:
@@ -402,7 +402,7 @@ class JUPEDSIM_OT_load_simulation(Operator):
                 {"INFO"},
                 f"Creating {self._total_agents} agents (every {self._frame_step} frame(s))...",
             )
-        chunk_size = 10
+        chunk_size = 100
         start = self._agent_index
         end = min(self._total_agents, start + chunk_size)
         for idx in range(start, end):
@@ -416,12 +416,12 @@ class JUPEDSIM_OT_load_simulation(Operator):
         return False
 
     def _step_create_paths(self, context: Context) -> bool:
-        """Create a small batch of agent path curves per tick."""
+        """Create a batch of agent path curves per tick."""
         if not self._path_groups:
             return True
         if self._path_index == 0:
             self._timed_start("create_paths")
-        chunk_size = 10
+        chunk_size = 100
         start = self._path_index
         end = min(len(self._path_groups), start + chunk_size)
         for idx in range(start, end):

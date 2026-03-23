@@ -140,16 +140,27 @@ def _create_curve_from_coords(context, name, coords, collection, mat_cache, clos
     return curve_obj
 
 
+_shared_agent_mesh = None
+
+
+def _get_shared_agent_mesh():
+    """Return a shared icosphere mesh, creating it once."""
+    global _shared_agent_mesh
+    if _shared_agent_mesh is None or _shared_agent_mesh.name not in bpy.data.meshes:
+        mesh = bpy.data.meshes.new("JuPedSim_Agent_Shared_Mesh")
+        bm = bmesh.new()
+        bmesh.ops.create_icosphere(bm, subdivisions=2, radius=0.5)
+        bm.to_mesh(mesh)
+        bm.free()
+        mesh.polygons.foreach_set("use_smooth", [True] * len(mesh.polygons))
+        mesh.update()
+        _shared_agent_mesh = mesh
+    return _shared_agent_mesh
+
+
 def create_agent(context, agent_id, collection, mat_cache):
     """Create an icosphere object for a single agent (streamed positions)."""
-    mesh = bpy.data.meshes.new(f"Agent_{agent_id}_Mesh")
-    bm = bmesh.new()
-    bmesh.ops.create_icosphere(bm, subdivisions=2, radius=0.5)
-    bm.to_mesh(mesh)
-    bm.free()
-    mesh.polygons.foreach_set("use_smooth", [True] * len(mesh.polygons))
-    mesh.update()
-
+    mesh = _get_shared_agent_mesh()
     agent_obj = bpy.data.objects.new(f"Agent_{agent_id}", mesh)
     agent_material = get_or_create_material(
         mat_cache, "JuPedSim_Agent_Material", (0.95, 0.7, 0.1, 1.0)
