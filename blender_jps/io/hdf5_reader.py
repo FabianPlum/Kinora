@@ -54,13 +54,18 @@ def read_simulation_data(path, frame_step, load_full_paths, cancel_event):
     path_groups = None
     if load_full_paths:
         start = time.perf_counter()
+        # Apply frame_step filtering once for all agents to avoid per-row checks
+        if frame_step > 1:
+            df_paths = df[df["frame"] % frame_step == 0]
+        else:
+            df_paths = df
+
         path_groups = []
-        for agent_id, agent_df in df.groupby("id"):
-            coords = [
-                (row["x"], row["y"], 0.0)
-                for _, row in agent_df.iterrows()
-                if frame_step <= 1 or row["frame"] % frame_step == 0
-            ]
+        for agent_id, agent_df in df_paths.groupby("id"):
+            # Build coordinate tuples from vectorized column access
+            x_vals = agent_df["x"].to_numpy()
+            y_vals = agent_df["y"].to_numpy()
+            coords = [(float(x), float(y), 0.0) for x, y in zip(x_vals, y_vals, strict=True)]
             path_groups.append((agent_id, coords))
         timings["load_full_paths_hdf5"] = time.perf_counter() - start
 
