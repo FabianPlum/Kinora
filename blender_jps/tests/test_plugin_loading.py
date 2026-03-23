@@ -305,7 +305,9 @@ def _test_hdf5_loading(addon_name, repo_root):
     from blender_jps.io.hdf5_reader import read_simulation_data
 
     cancel_event = __import__("threading").Event()
-    data, timings = read_simulation_data(example_path, frame_step=1, load_full_paths=False, cancel_event=cancel_event)
+    data, timings = read_simulation_data(
+        example_path, frame_step=1, load_full_paths=False, cancel_event=cancel_event
+    )
 
     assert data is not None, "read_simulation_data returned None"
     assert len(data["agent_ids"]) > 0, "No agents found in HDF5 file"
@@ -320,12 +322,20 @@ def _test_hdf5_loading(addon_name, repo_root):
     print("✓ Geometry loaded")
 
     # Test with frame_step > 1
-    data2, _ = read_simulation_data(example_path, frame_step=5, load_full_paths=False, cancel_event=cancel_event)
-    assert len(data2["frame_data"]) <= len(data["frame_data"]), "frame_step filtering did not reduce frames"
-    print(f"✓ frame_step=5 reduced frames from {len(data['frame_data'])} to {len(data2['frame_data'])}")
+    data2, _ = read_simulation_data(
+        example_path, frame_step=5, load_full_paths=False, cancel_event=cancel_event
+    )
+    assert len(data2["frame_data"]) <= len(data["frame_data"]), (
+        "frame_step filtering did not reduce frames"
+    )
+    print(
+        f"✓ frame_step=5 reduced frames from {len(data['frame_data'])} to {len(data2['frame_data'])}"
+    )
 
     # Test with full paths
-    data3, _ = read_simulation_data(example_path, frame_step=1, load_full_paths=True, cancel_event=cancel_event)
+    data3, _ = read_simulation_data(
+        example_path, frame_step=1, load_full_paths=True, cancel_event=cancel_event
+    )
     assert data3["path_groups"] is not None, "path_groups is None with load_full_paths=True"
     assert len(data3["path_groups"]) == len(data3["agent_ids"]), "path_groups count mismatch"
     print(f"✓ Full paths loaded for {len(data3['path_groups'])} agents")
