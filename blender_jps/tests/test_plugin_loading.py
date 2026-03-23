@@ -292,14 +292,14 @@ def _test_hdf5_loading(addon_name, repo_root):
     print("Testing HDF5 Loading")
     print("=" * 72 + "\n")
 
-    example_path = os.path.join(
-        repo_root, "blender_jps", "examples", "040_l020_g1_rf_h-.h5"
-    )
-    if not os.path.exists(example_path):
+    import pathlib
+
+    example_path = pathlib.Path(repo_root) / "blender_jps" / "examples" / "040_l020_g1_rf_h-.h5"
+    if not example_path.exists():
         raise RuntimeError(f"HDF5 example file not found: {example_path}")
     print(f"✓ Found HDF5 example file: {example_path}")
 
-    file_size = os.path.getsize(example_path)
+    file_size = example_path.stat().st_size
     print(f"✓ File size: {file_size:,} bytes ({file_size / 1024:.1f} KB)")
 
     from blender_jps.io.hdf5_reader import read_simulation_data
@@ -317,7 +317,7 @@ def _test_hdf5_loading(addon_name, repo_root):
     print(f"✓ Loaded {len(data['agent_ids'])} agents")
     print(f"✓ Frame range: {data['min_frame']} to {data['max_frame']}")
     print(f"✓ {len(data['frame_data'])} frames pre-grouped")
-    print(f"✓ Geometry loaded")
+    print("✓ Geometry loaded")
 
     # Test with frame_step > 1
     data2, _ = read_simulation_data(example_path, frame_step=5, load_full_paths=False, cancel_event=cancel_event)
