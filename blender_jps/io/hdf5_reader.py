@@ -41,11 +41,14 @@ def read_simulation_data(path, frame_step, load_full_paths, cancel_event):
     if cancel_event.is_set():
         return None, timings
 
-    # Pre-group by frame for fast playback
+    # Pre-group by frame for fast playback (only materialize frames matching frame_step)
     start = time.perf_counter()
     frame_data = {}
     for frame_num, group in df.groupby("frame"):
-        frame_data[int(frame_num)] = list(zip(group["id"], group["x"], group["y"], strict=True))
+        fn = int(frame_num)
+        if frame_step > 1 and (fn - min_frame) % frame_step != 0:
+            continue
+        frame_data[fn] = list(zip(group["id"], group["x"], group["y"], strict=True))
     timings["pregroup_frames_hdf5"] = time.perf_counter() - start
     if cancel_event.is_set():
         return None, timings

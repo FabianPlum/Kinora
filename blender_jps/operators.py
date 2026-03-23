@@ -28,8 +28,12 @@ def check_dependencies():
     import importlib.util
 
     install_utils.ensure_deps_in_path(ADDON_DIR)
-    if importlib.util.find_spec("shapely") is None:
-        return False, "shapely not found"
+    missing = []
+    for pkg in ("shapely", "pedpy"):
+        if importlib.util.find_spec(pkg) is None:
+            missing.append(pkg)
+    if missing:
+        return False, ", ".join(missing) + " not found"
     return True, None
 
 
@@ -46,18 +50,18 @@ class JUPEDSIM_OT_select_file(Operator, ImportHelper):
     )
 
     def execute(self, context):
-        """Store the selected SQLite file path in the scene properties."""
+        """Store the selected trajectory file path in the scene properties."""
         context.scene.jupedsim_props.sqlite_file = self.filepath
         self.report({"INFO"}, f"Selected file: {self.filepath}")
         return {"FINISHED"}
 
 
 class JUPEDSIM_OT_load_simulation(Operator):
-    """Load simulation data from the selected SQLite file."""
+    """Load simulation data from the selected trajectory file (SQLite or HDF5)."""
 
     bl_idname = "jupedsim.load_simulation"
     bl_label = "Load Simulation"
-    bl_description = "Load agent trajectories and geometry from the SQLite file"
+    bl_description = "Load agent trajectories and geometry from a SQLite or HDF5 file"
     bl_options = {"REGISTER", "UNDO"}
 
     _timer = None

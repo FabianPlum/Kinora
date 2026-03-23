@@ -25,7 +25,7 @@ STREAM_STATE = {
 
 
 def stream_frame_handler(scene):
-    """Stream positions from sqlite for the current frame."""
+    """Stream positions from SQLite or in-memory HDF5 data for the current frame."""
     state = STREAM_STATE
     if not state["agent_ids"]:
         return
@@ -33,7 +33,10 @@ def stream_frame_handler(scene):
         return
     blender_frame = scene.frame_current
     step = state["frame_step"]
-    db_frame = blender_frame if step <= 1 else blender_frame * step
+    if step <= 1:
+        db_frame = blender_frame
+    else:
+        db_frame = state["min_frame"] + (blender_frame - scene.frame_start) * step
     if db_frame < state["min_frame"] or db_frame > state["max_frame"]:
         return
 

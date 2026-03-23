@@ -60,6 +60,11 @@ def _parse_args():
         help="Test loading the prepackaged examples/trajectories.sqlite file",
     )
     p.add_argument(
+        "--test-hdf5-loading",
+        action="store_true",
+        help="Test HDF5 file loading via the hdf5_reader module",
+    )
+    p.add_argument(
         "--test-dependency-installation",
         action="store_true",
         help="Test the addon's dependency installation system",
@@ -281,6 +286,56 @@ def _test_example_file(addon_name, repo_root):
     print(f"  - Geometry: {'Yes' if has_geometry else 'No'}")
 
 
+def _test_hdf5_loading(addon_name, repo_root):
+    """Test loading an HDF5 trajectory file via the hdf5_reader module."""
+    print("\n" + "=" * 72)
+    print("Testing HDF5 Loading")
+    print("=" * 72 + "\n")
+
+    example_path = os.path.join(
+        repo_root, "blender_jps", "examples", "040_l020_g1_rf_h-.h5"
+    )
+    if not os.path.exists(example_path):
+        raise RuntimeError(f"HDF5 example file not found: {example_path}")
+    print(f"✓ Found HDF5 example file: {example_path}")
+
+    file_size = os.path.getsize(example_path)
+    print(f"✓ File size: {file_size:,} bytes ({file_size / 1024:.1f} KB)")
+
+    from blender_jps.io.hdf5_reader import read_simulation_data
+
+    cancel_event = __import__("threading").Event()
+    data, timings = read_simulation_data(example_path, frame_step=1, load_full_paths=False, cancel_event=cancel_event)
+
+    assert data is not None, "read_simulation_data returned None"
+    assert len(data["agent_ids"]) > 0, "No agents found in HDF5 file"
+    assert data["min_frame"] <= data["max_frame"], "Invalid frame range"
+    assert data["frame_data"] is not None, "frame_data is None"
+    assert len(data["frame_data"]) > 0, "frame_data is empty"
+    assert data["geometry"] is not None, "geometry is None"
+
+    print(f"✓ Loaded {len(data['agent_ids'])} agents")
+    print(f"✓ Frame range: {data['min_frame']} to {data['max_frame']}")
+    print(f"✓ {len(data['frame_data'])} frames pre-grouped")
+    print(f"✓ Geometry loaded")
+
+    # Test with frame_step > 1
+    data2, _ = read_simulation_data(example_path, frame_step=5, load_full_paths=False, cancel_event=cancel_event)
+    assert len(data2["frame_data"]) <= len(data["frame_data"]), "frame_step filtering did not reduce frames"
+    print(f"✓ frame_step=5 reduced frames from {len(data['frame_data'])} to {len(data2['frame_data'])}")
+
+    # Test with full paths
+    data3, _ = read_simulation_data(example_path, frame_step=1, load_full_paths=True, cancel_event=cancel_event)
+    assert data3["path_groups"] is not None, "path_groups is None with load_full_paths=True"
+    assert len(data3["path_groups"]) == len(data3["agent_ids"]), "path_groups count mismatch"
+    print(f"✓ Full paths loaded for {len(data3['path_groups'])} agents")
+
+    for key, value in timings.items():
+        print(f"  - {key}: {value:.3f}s")
+
+    print("\n✓ HDF5 loading test passed!")
+
+
 def _test_dependency_installation(addon_name, repo_root):
     """Test the addon's dependency installation operator."""
     print("\n" + "=" * 72)
@@ -379,6 +434,9 @@ def main():
 
         if args.test_sqlite_loading:
             _test_sqlite_loading(args.addon)
+
+        if args.test_hdf5_loading:
+            _test_hdf5_loading(args.addon, repo_root)
 
         if args.test_example_file:
             _test_example_file(args.addon, repo_root)

@@ -123,5 +123,6 @@ jobs:
             --require-operator jupedsim.select_file \
             --test-dependency-installation \
             --test-sqlite-loading \
+            --test-hdf5-loading \
             --test-example-file
       
