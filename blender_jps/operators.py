@@ -173,6 +173,9 @@ class JUPEDSIM_OT_load_simulation(Operator):
                     self.report({"ERROR"}, f"Failed to load simulation: {self._worker_error}")
                     self._print_worker_traceback()
                     return self._finish_cancel(context)
+                if self._worker_data is None:
+                    self.report({"WARNING"}, "No data returned from worker")
+                    return self._finish_cancel(context)
                 self._apply_worker_data(context)
                 props.loading_message = "Trajectory loaded"
                 props.loading_progress = 20.0
