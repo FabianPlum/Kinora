@@ -8,7 +8,8 @@ import pathlib
 import threading
 import time
 import traceback
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import bpy
 from bpy.props import StringProperty
