@@ -339,7 +339,7 @@ class JUPEDSIM_OT_load_simulation(Operator):
         self,
         reader_fn: Callable[
             [pathlib.Path, int, bool, threading.Event],
-            tuple[dict[str, Any], dict[str, float]],
+            tuple[dict[str, Any] | None, dict[str, float]],
         ],
         path: pathlib.Path,
         frame_step: int,
