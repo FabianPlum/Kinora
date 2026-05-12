@@ -16,9 +16,7 @@ import time
 def _detect_version(cur):
     """Read metadata.version; returns 1 if the table is missing."""
     try:
-        row = cur.execute(
-            "SELECT value FROM metadata WHERE key = 'version'"
-        ).fetchone()
+        row = cur.execute("SELECT value FROM metadata WHERE key = 'version'").fetchone()
     except sqlite3.Error:
         return 1
     if row is None:
@@ -134,12 +132,8 @@ def _load_levels_and_landings(cur, version):
     if version >= 3:
         levels = []
         try:
-            for lvl_id, z, wkt in cur.execute(
-                "SELECT id, z, wkt FROM levels ORDER BY id ASC"
-            ):
-                levels.append(
-                    {"id": int(lvl_id), "z": float(z), "polygon": shapely.from_wkt(wkt)}
-                )
+            for lvl_id, z, wkt in cur.execute("SELECT id, z, wkt FROM levels ORDER BY id ASC"):
+                levels.append({"id": int(lvl_id), "z": float(z), "polygon": shapely.from_wkt(wkt)})
         except sqlite3.Error:
             # `levels` table missing despite version=3 — fall through to
             # the legacy path rather than aborting the whole load.
@@ -184,8 +178,7 @@ def _load_full_path_groups(cursor, frame_step, min_frame, has_level_col, level_z
     """
     if has_level_col:
         res = cursor.execute(
-            "SELECT id, frame, pos_x, pos_y, level FROM trajectory_data "
-            "ORDER BY id ASC, frame ASC"
+            "SELECT id, frame, pos_x, pos_y, level FROM trajectory_data ORDER BY id ASC, frame ASC"
         )
         rows = res.fetchall()
         paths = {}

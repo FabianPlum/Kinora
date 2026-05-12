@@ -202,8 +202,7 @@ def create_landing_ramps(landings, levels, collection, mat_cache):
 
         # Project each vertex onto the direction vector; min projection
         # sits at z_from, max at z_to, the rest interpolate.
-        projs = [(x - landing_centroid[0]) * dx + (y - landing_centroid[1]) * dy
-                 for x, y in coords]
+        projs = [(x - landing_centroid[0]) * dx + (y - landing_centroid[1]) * dy for x, y in coords]
         p_min = min(projs)
         p_max = max(projs)
         span = p_max - p_min if p_max > p_min else 1.0
