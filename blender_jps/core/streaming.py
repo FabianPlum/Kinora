@@ -23,7 +23,11 @@ STREAM_STATE: dict[str, Any] = {
     "objects": [],
     "object_name": None,
     "handler_installed": False,
-    "frame_data": None,  # dict: frame_number -> list of (id, x, y) tuples (HDF5 mode)
+    "frame_data": None,  # dict: frame_number -> list of (id, x, y[, z]) tuples (HDF5 mode)
+    # v3 SQLite schema support: ``has_level_col`` tells the reader to
+    # SELECT level alongside x/y, and ``level_z`` maps level id -> world-z.
+    "has_level_col": False,
+    "level_z": {},
 }
 
 
@@ -44,12 +48,20 @@ def stream_frame_handler(scene: bpy.types.Scene) -> None:
         return
 
     if state["frame_data"] is not None:
-        rows = state["frame_data"].get(db_frame, [])
+        raw_rows = state["frame_data"].get(db_frame, [])
+        # HDF5 frame buffers historically carry (id, x, y); normalize to
+        # (id, x, y, z) with z=0 so the rest of the handler is uniform.
+        rows = [_with_z(row) for row in raw_rows]
     else:
         if state["conn"] is None:
             state["conn"] = sqlite3.connect(state["db_path"], isolation_level=None)
             state["cursor"] = state["conn"].cursor()
-        rows = query_frame_positions(state["cursor"], db_frame)
+        rows = query_frame_positions(
+            state["cursor"],
+            db_frame,
+            has_level_col=state["has_level_col"],
+            level_z=state["level_z"],
+        )
 
     if state["mode"] == "big":
         obj = bpy.data.objects.get(state["object_name"])
@@ -60,14 +72,14 @@ def stream_frame_handler(scene: bpy.types.Scene) -> None:
         coords = array("f", [0.0] * (total * 3))
         for i in range(2, len(coords), 3):
             coords[i] = hide_z
-        for agent_id, x, y in rows:
+        for agent_id, x, y, z in rows:
             idx = state["id_to_index"].get(agent_id)
             if idx is None:
                 continue
             base = idx * 3
             coords[base] = float(x)
             coords[base + 1] = float(y)
-            coords[base + 2] = 0.5
+            coords[base + 2] = float(z) + 0.5
         obj.data.vertices.foreach_set("co", coords)
         obj.data.update()
         return
@@ -76,14 +88,22 @@ def stream_frame_handler(scene: bpy.types.Scene) -> None:
     for obj in state["objects"]:
         obj.hide_viewport = True
         obj.hide_render = True
-    for agent_id, x, y in rows:
+    for agent_id, x, y, z in rows:
         idx = state["id_to_index"].get(agent_id)
         if idx is None:
             continue
         obj = state["objects"][idx]
-        obj.location = (float(x), float(y), 0.5)
+        obj.location = (float(x), float(y), float(z) + 0.5)
         obj.hide_viewport = False
         obj.hide_render = False
+
+
+def _with_z(row):
+    """Normalize a frame-buffer row to ``(id, x, y, z)``."""
+    if len(row) == 4:
+        return row
+    agent_id, x, y = row
+    return (agent_id, x, y, 0.0)
 
 
 def start_streaming(
@@ -96,6 +116,8 @@ def start_streaming(
     objects: list[bpy.types.Object] | None = None,
     object_name: str | None = None,
     frame_data: FrameData | None = None,
+    has_level_col: bool = False,
+    level_z: dict[int, float] | None = None,
 ) -> None:
     """Register the frame-change handler and populate streaming state."""
     STREAM_STATE["db_path"] = db_path
@@ -108,6 +130,8 @@ def start_streaming(
     STREAM_STATE["mode"] = mode
     STREAM_STATE["objects"] = objects or []
     STREAM_STATE["object_name"] = object_name
+    STREAM_STATE["has_level_col"] = has_level_col
+    STREAM_STATE["level_z"] = dict(level_z) if level_z else {}
     if not STREAM_STATE["handler_installed"]:
         bpy.app.handlers.frame_change_pre.append(stream_frame_handler)
         STREAM_STATE["handler_installed"] = True
@@ -132,4 +156,6 @@ def clear_stream_state() -> None:
     STREAM_STATE["mode"] = None
     STREAM_STATE["objects"] = []
     STREAM_STATE["object_name"] = None
+    STREAM_STATE["has_level_col"] = False
+    STREAM_STATE["level_z"] = {}
     STREAM_STATE["handler_installed"] = False

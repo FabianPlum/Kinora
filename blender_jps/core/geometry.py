@@ -43,16 +43,26 @@ def get_or_create_collection(name):
     return collection
 
 
-def create_geometry(context, geometry, collection, mat_cache):
-    """Create curves from the walkable area geometry.
+def create_geometry(context, geometry_or_levels, collection, mat_cache):
+    """Create slabs + boundary curves for the walkable geometry.
 
-    Returns the number of boundary curves created.
+    Accepts either:
+    - A list of level dicts ``[{"id", "z", "polygon"}, ...]`` (v3 multi-
+      floor path), or
+    - A single shapely Polygon/MultiPolygon (legacy v2 path), which is
+      treated as one level at z=0.
+
+    Returns the total number of boundary curves created.
     """
-    polygon = geometry.polygon if hasattr(geometry, "polygon") else geometry
+    levels = _normalize_levels_arg(geometry_or_levels)
 
-    # Ensure viewport clip distance covers the geometry extent
-    bounds = polygon.bounds  # (minx, miny, maxx, maxy)
-    max_dim = max(bounds[2] - bounds[0], bounds[3] - bounds[1])
+    # Compute combined bounds for the viewport clip distance + ground-plane
+    # padding.
+    combined_bounds = _combined_bounds(levels)
+    if combined_bounds is None:
+        return 0
+    minx, miny, maxx, maxy = combined_bounds
+    max_dim = max(maxx - minx, maxy - miny)
     if max_dim > 0:
         for window in context.window_manager.windows:
             for area in window.screen.areas:
@@ -62,57 +72,112 @@ def create_geometry(context, geometry, collection, mat_cache):
                     if space.type == "VIEW_3D" and space.clip_end < max_dim:
                         space.clip_end = max_dim * 4
 
-    # Create a ground plane at origin, expanded 10% beyond geometry bounds.
-    span_x = max(bounds[2] - bounds[0], 0.0)
-    span_y = max(bounds[3] - bounds[1], 0.0)
-    if span_x > 0.0 and span_y > 0.0:
-        pad_x = span_x * 0.1
-        pad_y = span_y * 0.1
-        min_x = bounds[0] - pad_x
-        max_x = bounds[2] + pad_x
-        min_y = bounds[1] - pad_y
-        max_y = bounds[3] + pad_y
+    pad_x = (maxx - minx) * 0.1
+    pad_y = (maxy - miny) * 0.1
 
-        plane_mesh = bpy.data.meshes.new("JuPedSim_Ground_Plane_Mesh")
-        bm = bmesh.new()
-        verts = [
-            bm.verts.new((min_x, min_y, 0.0)),
-            bm.verts.new((max_x, min_y, 0.0)),
-            bm.verts.new((max_x, max_y, 0.0)),
-            bm.verts.new((min_x, max_y, 0.0)),
-        ]
-        bm.faces.new(verts)
-        bm.to_mesh(plane_mesh)
-        bm.free()
-        plane_obj = bpy.data.objects.new("JuPedSim_Ground_Plane", plane_mesh)
-        plane_obj.location = (0.0, 0.0, 0.0)
-        plane_material = get_or_create_material(
-            mat_cache, "JuPedSim_Ground_Plane_Material", (0.85, 0.85, 0.85, 1.0)
-        )
-        assign_material(plane_obj, plane_material)
-        collection.objects.link(plane_obj)
-
-    # Create curves for exterior boundary
-    _create_curve_from_coords(
-        context,
-        "Walkable_Area_Boundary",
-        list(polygon.exterior.coords),
-        collection,
-        mat_cache,
-        closed=True,
+    plane_material = get_or_create_material(
+        mat_cache, "JuPedSim_Ground_Plane_Material", (0.85, 0.85, 0.85, 1.0)
     )
 
-    # Create curves for any interior holes (obstacles)
-    for i, interior in enumerate(polygon.interiors):
-        _create_curve_from_coords(
-            context, f"Obstacle_{i}", list(interior.coords), collection, mat_cache, closed=True
+    num_curves = 0
+    for lvl in levels:
+        polygon = lvl["polygon"]
+        z = float(lvl["z"])
+        lvl_id = lvl["id"]
+        lvl_bounds = polygon.bounds  # tight bounds per level for the slab
+        if not lvl_bounds:
+            continue
+        slab_min_x = lvl_bounds[0] - pad_x * 0.1
+        slab_max_x = lvl_bounds[2] + pad_x * 0.1
+        slab_min_y = lvl_bounds[1] - pad_y * 0.1
+        slab_max_y = lvl_bounds[3] + pad_y * 0.1
+        _create_slab(
+            f"JuPedSim_Level_{lvl_id}",
+            slab_min_x,
+            slab_min_y,
+            slab_max_x,
+            slab_max_y,
+            z,
+            plane_material,
+            collection,
         )
+        for poly_part in _polygon_parts(polygon):
+            num_curves += _create_curve_from_coords(
+                context,
+                f"Walkable_Boundary_L{lvl_id}",
+                list(poly_part.exterior.coords),
+                collection,
+                mat_cache,
+                closed=True,
+                z=z,
+            )
+            for i, interior in enumerate(poly_part.interiors):
+                num_curves += _create_curve_from_coords(
+                    context,
+                    f"Obstacle_L{lvl_id}_{i}",
+                    list(interior.coords),
+                    collection,
+                    mat_cache,
+                    closed=True,
+                    z=z,
+                )
+    return num_curves
 
-    return 1 + len(list(polygon.interiors))
+
+def _normalize_levels_arg(arg):
+    """Coerce the legacy single-polygon input into the multi-level shape."""
+    if isinstance(arg, list) and arg and isinstance(arg[0], dict) and "polygon" in arg[0]:
+        return arg
+    polygon = arg.polygon if hasattr(arg, "polygon") else arg
+    return [{"id": 0, "z": 0.0, "polygon": polygon}]
 
 
-def _create_curve_from_coords(context, name, coords, collection, mat_cache, closed=False):
-    """Create a curve object from a list of coordinates."""
+def _polygon_parts(geom):
+    """Yield each Polygon part of a Polygon or MultiPolygon."""
+    if hasattr(geom, "geoms"):  # MultiPolygon
+        for g in geom.geoms:
+            yield g
+    else:
+        yield geom
+
+
+def _combined_bounds(levels):
+    out = None
+    for lvl in levels:
+        b = lvl["polygon"].bounds
+        if not b:
+            continue
+        if out is None:
+            out = list(b)
+        else:
+            out[0] = min(out[0], b[0])
+            out[1] = min(out[1], b[1])
+            out[2] = max(out[2], b[2])
+            out[3] = max(out[3], b[3])
+    return tuple(out) if out is not None else None
+
+
+def _create_slab(name, min_x, min_y, max_x, max_y, z, material, collection):
+    plane_mesh = bpy.data.meshes.new(f"{name}_Mesh")
+    bm = bmesh.new()
+    verts = [
+        bm.verts.new((min_x, min_y, z)),
+        bm.verts.new((max_x, min_y, z)),
+        bm.verts.new((max_x, max_y, z)),
+        bm.verts.new((min_x, max_y, z)),
+    ]
+    bm.faces.new(verts)
+    bm.to_mesh(plane_mesh)
+    bm.free()
+    plane_obj = bpy.data.objects.new(name, plane_mesh)
+    plane_obj.location = (0.0, 0.0, 0.0)
+    assign_material(plane_obj, material)
+    collection.objects.link(plane_obj)
+    return plane_obj
+
+
+def _create_curve_from_coords(context, name, coords, collection, mat_cache, closed=False, z=0.0):
+    """Create a curve object from a list of coordinates, lifted to ``z``."""
     curve_data = bpy.data.curves.new(name=name, type="CURVE")
     curve_data.dimensions = "3D"
     curve_data.resolution_u = 2
@@ -122,7 +187,7 @@ def _create_curve_from_coords(context, name, coords, collection, mat_cache, clos
 
     for i, coord in enumerate(coords):
         x, y = coord[0], coord[1]
-        spline.points[i].co = (x, y, 0.0, 1.0)
+        spline.points[i].co = (x, y, z, 1.0)
 
     if closed:
         spline.use_cyclic_u = True
@@ -137,7 +202,7 @@ def _create_curve_from_coords(context, name, coords, collection, mat_cache, clos
     curve_data.bevel_depth = context.scene.jupedsim_props.geometry_thickness
     curve_data.bevel_resolution = 2
 
-    return curve_obj
+    return 1
 
 
 _shared_agent_mesh = None

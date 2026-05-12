@@ -191,9 +191,12 @@ class JUPEDSIM_OT_load_simulation(Operator):
         if self._stage == "create_geometry":
             assert self._worker_data is not None
             self._timed_start("create_geometry")
+            # v3 SQLite files carry per-level geometry; pass the list when
+            # available so each floor is rendered at its own elevation.
+            geometry_arg = self._worker_data.get("levels") or self._worker_data["geometry"]
             num_curves = geo.create_geometry(
                 context,
-                self._worker_data["geometry"],
+                geometry_arg,
                 self._geometry_collection,
                 self._materials,
             )
@@ -231,6 +234,8 @@ class JUPEDSIM_OT_load_simulation(Operator):
                 mode="big",
                 object_name=obj_name,
                 frame_data=self._worker_data.get("frame_data"),
+                has_level_col=bool(self._worker_data.get("has_level_col")),
+                level_z=self._worker_data.get("level_z"),
             )
             props.loading_message = "Creating particle points..."
             props.loading_progress = 90.0
@@ -263,6 +268,8 @@ class JUPEDSIM_OT_load_simulation(Operator):
                     mode="default",
                     objects=objects,
                     frame_data=self._worker_data.get("frame_data"),
+                    has_level_col=bool(self._worker_data.get("has_level_col")),
+                    level_z=self._worker_data.get("level_z"),
                 )
             context.scene.frame_set(context.scene.frame_start)
             self._timed_end("finalize")
