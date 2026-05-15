@@ -81,8 +81,10 @@ def create_navmesh_objects(
     if not _engines:
         return 0
 
+    # Muted slate-blue: distinguishable from the dark geometry curves
+    # without competing for attention.
     material = get_or_create_material(
-        mat_cache, "JuPedSim_Navmesh_Material", (0.95, 0.55, 0.2, 1.0)
+        mat_cache, "JuPedSim_Navmesh_Material", (0.35, 0.5, 0.65, 1.0)
     )
     level_z = {int(lvl["id"]): float(lvl["z"]) for lvl in nav_levels}
 
@@ -111,12 +113,16 @@ def _build_navmesh_object(level_id, engine, z, material, collection):
     mesh.update()
 
     obj = bpy.data.objects.new(name, mesh)
-    # Edges-only — keeps the slab/agents visible under the triangulation,
-    # matching jupedsim_visualizer's look.
-    obj.display_type = "WIRE"
-    obj.show_all_edges = True
-    obj.hide_render = True
     assign_material(obj, material)
+    # Wireframe modifier turns each edge into a thin tube so the material
+    # color actually shows in solid viewport shading — display_type='WIRE'
+    # would draw in the theme's wire color and look identical to the
+    # geometry boundaries.
+    mod = obj.modifiers.new(name="Wireframe", type="WIREFRAME")
+    mod.thickness = 0.03
+    mod.use_replace = True
+    mod.use_even_offset = False
+    obj.hide_render = True
     collection.objects.link(obj)
     return obj
 
