@@ -18,6 +18,7 @@ from bpy_extras.io_utils import ImportHelper
 
 from . import install_utils
 from .core import geometry as geo
+from .core import navmesh as nav
 from .core.streaming import clear_stream_state, start_streaming
 from .io.hdf5_reader import read_simulation_data as read_hdf5_data
 from .io.sqlite_reader import read_simulation_data as read_sqlite_data
@@ -191,6 +192,7 @@ class JUPEDSIM_OT_load_simulation(Operator):
         if self._stage == "create_geometry":
             assert self._worker_data is not None
             self._timed_start("create_geometry")
+            geometry_arg = self._worker_data.get("levels") or self._worker_data["geometry"]
             num_curves = geo.create_geometry(
                 context,
                 self._worker_data["geometry"],
@@ -201,6 +203,12 @@ class JUPEDSIM_OT_load_simulation(Operator):
             self.report({"INFO"}, f"Created geometry with {num_curves} boundary curves")
             props.loading_message = "Creating geometry..."
             props.loading_progress = 25.0
+            self._timed_start("build_navmesh")
+            nav_levels = nav.normalize_levels_arg(geometry_arg)
+            engines = nav.build_routing_engines(nav_levels)
+            self._timed_end("build_navmesh")
+            if engines:
+                self.report({"INFO"}, f"Built routing engines for {len(engines)} level(s)")
             self._stage = "create_big_data" if self._big_data_mode else "create_agents"
 
         if self._stage == "create_agents":
@@ -301,6 +309,7 @@ class JUPEDSIM_OT_load_simulation(Operator):
         self._path_groups = None
         self._materials = {}
         clear_stream_state()
+        nav.clear_engines()
 
     def _finish_success(self, context: Context) -> set[str]:
         """Finalize a successful load."""
@@ -448,9 +457,129 @@ class JUPEDSIM_OT_load_simulation(Operator):
             print(trace)
 
 
+class JUPEDSIM_OT_show_navmesh(Operator):
+    """Build and show the routing-engine triangulation as wireframe meshes."""
+
+    bl_idname = "jupedsim.show_navmesh"
+    bl_label = "Show Navmesh"
+    bl_description = "Render the jupedsim router's triangulation per level"
+
+    def execute(self, context: Context) -> set[str]:
+        if not nav.available_levels():
+            self.report({"ERROR"}, "No routing engines built. Load a simulation first.")
+            return {"CANCELLED"}
+        collection = geo.get_or_create_collection(nav.NAVMESH_COLLECTION)
+        # Reuse the geometry's level z lookup if levels were loaded.
+        nav_levels = [
+            {"id": lvl_id, "z": _level_z_lookup(lvl_id), "polygon": None}
+            for lvl_id in nav.available_levels()
+        ]
+        mat_cache: dict = {}
+        n = nav.create_navmesh_objects(nav_levels, collection, mat_cache)
+        self.report({"INFO"}, f"Built navmesh for {n} level(s)")
+        return {"FINISHED"}
+
+
+class JUPEDSIM_OT_hide_navmesh(Operator):
+    """Remove the navmesh debug objects."""
+
+    bl_idname = "jupedsim.hide_navmesh"
+    bl_label = "Hide Navmesh"
+    bl_description = "Remove the navmesh wireframe collection"
+
+    def execute(self, context: Context) -> set[str]:
+        if nav.NAVMESH_COLLECTION in bpy.data.collections:
+            geo.get_or_create_collection(nav.NAVMESH_COLLECTION)  # clears contents
+        return {"FINISHED"}
+
+
+class JUPEDSIM_OT_compute_route(Operator):
+    """Run jupedsim's router on (from, to) and draw the result."""
+
+    bl_idname = "jupedsim.compute_route"
+    bl_label = "Compute Route"
+    bl_description = "Query jupedsim's RoutingEngine and draw the waypoints"
+
+    def execute(self, context: Context) -> set[str]:
+        props = context.scene.jupedsim_props
+        if not nav.available_levels():
+            self.report({"ERROR"}, "No routing engines built. Load a simulation first.")
+            return {"CANCELLED"}
+        level_id = int(props.route_level)
+        if level_id not in nav.available_levels():
+            level_id = nav.available_levels()[0]
+        from_xy = (float(props.route_from[0]), float(props.route_from[1]))
+        to_xy = (float(props.route_to[0]), float(props.route_to[1]))
+        collection = (
+            geo.get_or_create_collection(nav.ROUTE_COLLECTION)
+            if nav.ROUTE_COLLECTION not in bpy.data.collections
+            else bpy.data.collections[nav.ROUTE_COLLECTION]
+        )
+        mat_cache: dict = {}
+        z = _level_z_lookup(level_id)
+        _, length, err = nav.compute_route_curve(level_id, from_xy, to_xy, z, collection, mat_cache)
+        if err:
+            self.report({"ERROR"}, err)
+            return {"CANCELLED"}
+        self.report({"INFO"}, f"Route length: {length:.2f} m")
+        return {"FINISHED"}
+
+
+class JUPEDSIM_OT_clear_routes(Operator):
+    """Remove all previously computed route curves."""
+
+    bl_idname = "jupedsim.clear_routes"
+    bl_label = "Clear Routes"
+    bl_description = "Remove all Route_* objects"
+
+    def execute(self, context: Context) -> set[str]:
+        if nav.ROUTE_COLLECTION not in bpy.data.collections:
+            return {"FINISHED"}
+        collection = bpy.data.collections[nav.ROUTE_COLLECTION]
+        n = nav.clear_routes(collection)
+        self.report({"INFO"}, f"Cleared {n} route object(s)")
+        return {"FINISHED"}
+
+
+class JUPEDSIM_OT_route_endpoint_from_cursor(Operator):
+    """Copy the 3D cursor's XY into the route From or To property."""
+
+    bl_idname = "jupedsim.route_endpoint_from_cursor"
+    bl_label = "Use 3D Cursor"
+    bl_description = "Set the route endpoint from the 3D cursor's XY position"
+
+    target: StringProperty(default="from")  # "from" or "to"
+
+    def execute(self, context: Context) -> set[str]:
+        cursor = context.scene.cursor.location
+        props = context.scene.jupedsim_props
+        if self.target == "to":
+            props.route_to = (cursor.x, cursor.y)
+        else:
+            props.route_from = (cursor.x, cursor.y)
+        return {"FINISHED"}
+
+
+def _level_z_lookup(level_id: int) -> float:
+    """Read level z from the geometry slab object if present, else 0.0."""
+    obj = bpy.data.objects.get(f"JuPedSim_Level_{level_id}")
+    if obj is not None:
+        return float(obj.location.z + obj.bound_box[0][2])
+    # Single-floor (legacy) ground plane
+    obj = bpy.data.objects.get("JuPedSim_Ground_Plane")
+    if obj is not None:
+        return float(obj.location.z)
+    return 0.0
+
+
 classes = [
     JUPEDSIM_OT_select_file,
     JUPEDSIM_OT_load_simulation,
+    JUPEDSIM_OT_show_navmesh,
+    JUPEDSIM_OT_hide_navmesh,
+    JUPEDSIM_OT_compute_route,
+    JUPEDSIM_OT_clear_routes,
+    JUPEDSIM_OT_route_endpoint_from_cursor,
 ]
 
 

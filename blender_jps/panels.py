@@ -8,7 +8,8 @@ import os
 import bpy
 from bpy.types import Context, Panel
 
-from .install_utils import is_pedpy_installed
+from .core import navmesh as nav
+from .install_utils import is_jupedsim_installed, is_pedpy_installed
 
 ADDON_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -145,9 +146,60 @@ class JUPEDSIM_PT_info_panel(Panel):
         box.label(text=f"Frame range: {context.scene.frame_start} - {context.scene.frame_end}")
 
 
+class JUPEDSIM_PT_navmesh_panel(Panel):
+    """Routing-engine debug visualization (triangulation + path queries)."""
+
+    bl_label = "Navigation Debug"
+    bl_idname = "JUPEDSIM_PT_navmesh_panel"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "JuPedSim"
+    bl_options = {"DEFAULT_CLOSED"}
+
+    def draw(self, context: Context) -> None:
+        layout = self.layout
+        props = context.scene.jupedsim_props
+
+        if not is_jupedsim_installed(ADDON_DIR):
+            box = layout.box()
+            box.alert = True
+            box.label(text="jupedsim not installed", icon="ERROR")
+            box.label(text="Re-run 'Install Dependencies' in")
+            box.label(text="addon preferences to enable this.")
+            return
+
+        levels = nav.available_levels()
+        if not levels:
+            layout.label(text="Load a simulation first.", icon="INFO")
+            return
+
+        box = layout.box()
+        box.label(text="Triangulation", icon="MESH_DATA")
+        row = box.row(align=True)
+        row.operator("jupedsim.show_navmesh", text="Show", icon="HIDE_OFF")
+        row.operator("jupedsim.hide_navmesh", text="Hide", icon="HIDE_ON")
+
+        box = layout.box()
+        box.label(text="Router Query", icon="DRIVER_DISTANCE")
+        if len(levels) > 1:
+            box.prop(props, "route_level", text="Level")
+        row = box.row(align=True)
+        row.prop(props, "route_from", text="From")
+        op = row.operator("jupedsim.route_endpoint_from_cursor", text="", icon="CURSOR")
+        op.target = "from"
+        row = box.row(align=True)
+        row.prop(props, "route_to", text="To")
+        op = row.operator("jupedsim.route_endpoint_from_cursor", text="", icon="CURSOR")
+        op.target = "to"
+        row = box.row(align=True)
+        row.operator("jupedsim.compute_route", text="Compute Route", icon="PLAY")
+        row.operator("jupedsim.clear_routes", text="Clear", icon="X")
+
+
 classes = [
     JUPEDSIM_PT_main_panel,
     JUPEDSIM_PT_info_panel,
+    JUPEDSIM_PT_navmesh_panel,
 ]
 
 
