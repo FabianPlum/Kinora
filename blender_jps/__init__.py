@@ -28,7 +28,6 @@ import bpy
 from bpy.props import (
     BoolProperty,
     FloatProperty,
-    FloatVectorProperty,
     IntProperty,
     PointerProperty,
     StringProperty,
@@ -166,22 +165,6 @@ class JuPedSimProperties(PropertyGroup):
         description="Level id whose RoutingEngine to query",
         default=0,
         min=0,
-    )
-
-    route_from: FloatVectorProperty(
-        name="Route From",
-        description="World XY of the route source point",
-        size=2,
-        default=(0.0, 0.0),
-        subtype="XYZ",
-    )
-
-    route_to: FloatVectorProperty(
-        name="Route To",
-        description="World XY of the route target point",
-        size=2,
-        default=(0.0, 0.0),
-        subtype="XYZ",
     )
 
 

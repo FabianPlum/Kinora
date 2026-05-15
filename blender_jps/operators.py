@@ -206,6 +206,10 @@ class JUPEDSIM_OT_load_simulation(Operator):
             self._timed_start("build_navmesh")
             nav_levels = nav.normalize_levels_arg(geometry_arg)
             engines = nav.build_routing_engines(nav_levels)
+            if engines:
+                navmesh_collection = _get_or_link_collection(context, nav.NAVMESH_COLLECTION)
+                nav.clear_navmesh_objects(navmesh_collection)
+                nav.create_navmesh_objects(nav_levels, navmesh_collection, self._materials)
             self._timed_end("build_navmesh")
             if engines:
                 self.report({"INFO"}, f"Built routing engines for {len(engines)} level(s)")
@@ -457,73 +461,6 @@ class JUPEDSIM_OT_load_simulation(Operator):
             print(trace)
 
 
-class JUPEDSIM_OT_show_navmesh(Operator):
-    """Build and show the routing-engine triangulation as wireframe meshes."""
-
-    bl_idname = "jupedsim.show_navmesh"
-    bl_label = "Show Navmesh"
-    bl_description = "Render the jupedsim router's triangulation per level"
-
-    def execute(self, context: Context) -> set[str]:
-        if not nav.available_levels():
-            self.report({"ERROR"}, "No routing engines built. Load a simulation first.")
-            return {"CANCELLED"}
-        collection = _get_or_link_collection(context, nav.NAVMESH_COLLECTION)
-        # Replace any prior navmesh objects so re-clicking Show doesn't pile up.
-        nav.clear_navmesh_objects(collection)
-        nav_levels = [
-            {"id": lvl_id, "z": _level_z_lookup(lvl_id), "polygon": None}
-            for lvl_id in nav.available_levels()
-        ]
-        mat_cache: dict = {}
-        n = nav.create_navmesh_objects(nav_levels, collection, mat_cache)
-        self.report({"INFO"}, f"Built navmesh for {n} level(s)")
-        return {"FINISHED"}
-
-
-class JUPEDSIM_OT_hide_navmesh(Operator):
-    """Remove the navmesh debug objects."""
-
-    bl_idname = "jupedsim.hide_navmesh"
-    bl_label = "Hide Navmesh"
-    bl_description = "Remove the navmesh wireframe collection"
-
-    def execute(self, context: Context) -> set[str]:
-        if nav.NAVMESH_COLLECTION not in bpy.data.collections:
-            return {"FINISHED"}
-        n = nav.clear_navmesh_objects(bpy.data.collections[nav.NAVMESH_COLLECTION])
-        self.report({"INFO"}, f"Removed {n} navmesh object(s)")
-        return {"FINISHED"}
-
-
-class JUPEDSIM_OT_compute_route(Operator):
-    """Run jupedsim's router on (from, to) and draw the result."""
-
-    bl_idname = "jupedsim.compute_route"
-    bl_label = "Compute Route"
-    bl_description = "Query jupedsim's RoutingEngine and draw the waypoints"
-
-    def execute(self, context: Context) -> set[str]:
-        props = context.scene.jupedsim_props
-        if not nav.available_levels():
-            self.report({"ERROR"}, "No routing engines built. Load a simulation first.")
-            return {"CANCELLED"}
-        level_id = int(props.route_level)
-        if level_id not in nav.available_levels():
-            level_id = nav.available_levels()[0]
-        from_xy = (float(props.route_from[0]), float(props.route_from[1]))
-        to_xy = (float(props.route_to[0]), float(props.route_to[1]))
-        collection = _get_or_link_collection(context, nav.ROUTE_COLLECTION)
-        mat_cache: dict = {}
-        z = _level_z_lookup(level_id)
-        _, length, err = nav.compute_route_curve(level_id, from_xy, to_xy, z, collection, mat_cache)
-        if err:
-            self.report({"ERROR"}, err)
-            return {"CANCELLED"}
-        self.report({"INFO"}, f"Route length: {length:.2f} m")
-        return {"FINISHED"}
-
-
 class JUPEDSIM_OT_clear_routes(Operator):
     """Remove all previously computed route curves."""
 
@@ -537,25 +474,6 @@ class JUPEDSIM_OT_clear_routes(Operator):
         collection = bpy.data.collections[nav.ROUTE_COLLECTION]
         n = nav.clear_routes(collection)
         self.report({"INFO"}, f"Cleared {n} route object(s)")
-        return {"FINISHED"}
-
-
-class JUPEDSIM_OT_route_endpoint_from_cursor(Operator):
-    """Copy the 3D cursor's XY into the route From or To property."""
-
-    bl_idname = "jupedsim.route_endpoint_from_cursor"
-    bl_label = "Use 3D Cursor"
-    bl_description = "Set the route endpoint from the 3D cursor's XY position"
-
-    target: StringProperty(default="from")  # "from" or "to"
-
-    def execute(self, context: Context) -> set[str]:
-        cursor = context.scene.cursor.location
-        props = context.scene.jupedsim_props
-        if self.target == "to":
-            props.route_to = (cursor.x, cursor.y)
-        else:
-            props.route_from = (cursor.x, cursor.y)
         return {"FINISHED"}
 
 
@@ -694,11 +612,7 @@ def _level_z_lookup(level_id: int) -> float:
 classes = [
     JUPEDSIM_OT_select_file,
     JUPEDSIM_OT_load_simulation,
-    JUPEDSIM_OT_show_navmesh,
-    JUPEDSIM_OT_hide_navmesh,
-    JUPEDSIM_OT_compute_route,
     JUPEDSIM_OT_clear_routes,
-    JUPEDSIM_OT_route_endpoint_from_cursor,
     JUPEDSIM_OT_pick_route,
 ]
 

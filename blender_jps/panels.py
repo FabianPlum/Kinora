@@ -173,34 +173,14 @@ class JUPEDSIM_PT_navmesh_panel(Panel):
             layout.label(text="Load a simulation first.", icon="INFO")
             return
 
-        box = layout.box()
-        box.label(text="Triangulation", icon="MESH_DATA")
-        row = box.row(align=True)
-        row.operator("jupedsim.show_navmesh", text="Show", icon="HIDE_OFF")
-        row.operator("jupedsim.hide_navmesh", text="Hide", icon="HIDE_ON")
-
-        box = layout.box()
-        box.label(text="Router Query", icon="DRIVER_DISTANCE")
         if len(levels) > 1:
-            box.prop(props, "route_level", text="Level")
-        row = box.row()
+            layout.prop(props, "route_level", text="Level")
+        row = layout.row()
         row.scale_y = 1.3
         row.operator(
             "jupedsim.pick_route", text="Pick Route (LMB-drag)", icon="RESTRICT_SELECT_OFF"
         )
-        box.separator()
-        box.label(text="Or enter coordinates:")
-        row = box.row(align=True)
-        row.prop(props, "route_from", text="From")
-        op = row.operator("jupedsim.route_endpoint_from_cursor", text="", icon="CURSOR")
-        op.target = "from"
-        row = box.row(align=True)
-        row.prop(props, "route_to", text="To")
-        op = row.operator("jupedsim.route_endpoint_from_cursor", text="", icon="CURSOR")
-        op.target = "to"
-        row = box.row(align=True)
-        row.operator("jupedsim.compute_route", text="Compute Route", icon="PLAY")
-        row.operator("jupedsim.clear_routes", text="Clear", icon="X")
+        layout.operator("jupedsim.clear_routes", text="Clear Routes", icon="X")
 
 
 classes = [
