@@ -468,8 +468,9 @@ class JUPEDSIM_OT_show_navmesh(Operator):
         if not nav.available_levels():
             self.report({"ERROR"}, "No routing engines built. Load a simulation first.")
             return {"CANCELLED"}
-        collection = geo.get_or_create_collection(nav.NAVMESH_COLLECTION)
-        # Reuse the geometry's level z lookup if levels were loaded.
+        collection = _get_or_link_collection(context, nav.NAVMESH_COLLECTION)
+        # Replace any prior navmesh objects so re-clicking Show doesn't pile up.
+        nav.clear_navmesh_objects(collection)
         nav_levels = [
             {"id": lvl_id, "z": _level_z_lookup(lvl_id), "polygon": None}
             for lvl_id in nav.available_levels()
@@ -488,8 +489,10 @@ class JUPEDSIM_OT_hide_navmesh(Operator):
     bl_description = "Remove the navmesh wireframe collection"
 
     def execute(self, context: Context) -> set[str]:
-        if nav.NAVMESH_COLLECTION in bpy.data.collections:
-            geo.get_or_create_collection(nav.NAVMESH_COLLECTION)  # clears contents
+        if nav.NAVMESH_COLLECTION not in bpy.data.collections:
+            return {"FINISHED"}
+        n = nav.clear_navmesh_objects(bpy.data.collections[nav.NAVMESH_COLLECTION])
+        self.report({"INFO"}, f"Removed {n} navmesh object(s)")
         return {"FINISHED"}
 
 
@@ -510,11 +513,7 @@ class JUPEDSIM_OT_compute_route(Operator):
             level_id = nav.available_levels()[0]
         from_xy = (float(props.route_from[0]), float(props.route_from[1]))
         to_xy = (float(props.route_to[0]), float(props.route_to[1]))
-        collection = (
-            geo.get_or_create_collection(nav.ROUTE_COLLECTION)
-            if nav.ROUTE_COLLECTION not in bpy.data.collections
-            else bpy.data.collections[nav.ROUTE_COLLECTION]
-        )
+        collection = _get_or_link_collection(context, nav.ROUTE_COLLECTION)
         mat_cache: dict = {}
         z = _level_z_lookup(level_id)
         _, length, err = nav.compute_route_curve(level_id, from_xy, to_xy, z, collection, mat_cache)
@@ -594,10 +593,7 @@ class JUPEDSIM_OT_pick_route(Operator):
         self._from_xy = None
         self._last_length = None
         self._materials = {}
-        if nav.ROUTE_COLLECTION in bpy.data.collections:
-            self._collection = bpy.data.collections[nav.ROUTE_COLLECTION]
-        else:
-            self._collection = geo.get_or_create_collection(nav.ROUTE_COLLECTION)
+        self._collection = _get_or_link_collection(context, nav.ROUTE_COLLECTION)
         nav.remove_live_route()
         context.workspace.status_text_set(
             "Route picker: LMB to set From, drag to query, release to finalize, ESC/RMB to cancel"
@@ -666,6 +662,21 @@ class JUPEDSIM_OT_pick_route(Operator):
         if hit is None:
             return None
         return (float(hit.x), float(hit.y))
+
+
+def _get_or_link_collection(context: Context, name: str) -> bpy.types.Collection:
+    """Return an existing collection (don't clear it) or link a new one.
+
+    Unlike :func:`geometry.get_or_create_collection`, this preserves the
+    contents — important when the navmesh/routes share the same
+    collection as the floor slabs and obstacles.
+    """
+    coll = bpy.data.collections.get(name)
+    if coll is not None:
+        return coll
+    coll = bpy.data.collections.new(name)
+    context.scene.collection.children.link(coll)
+    return coll
 
 
 def _level_z_lookup(level_id: int) -> float:

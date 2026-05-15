@@ -23,8 +23,8 @@ import bpy
 
 from .geometry import assign_material, get_or_create_material
 
-NAVMESH_COLLECTION = "JuPedSim_Navmesh"
-ROUTE_COLLECTION = "JuPedSim_Routes"
+NAVMESH_COLLECTION = "JuPedSim_Geometry"
+ROUTE_COLLECTION = "JuPedSim_Geometry"
 LIVE_ROUTE_NAME = "Route_Live"
 LIVE_FROM_NAME = "Route_Live_From"
 LIVE_TO_NAME = "Route_Live_To"
@@ -111,8 +111,11 @@ def _build_navmesh_object(level_id, engine, z, material, collection):
     mesh.update()
 
     obj = bpy.data.objects.new(name, mesh)
-    obj.show_wire = True
+    # Edges-only — keeps the slab/agents visible under the triangulation,
+    # matching jupedsim_visualizer's look.
+    obj.display_type = "WIRE"
     obj.show_all_edges = True
+    obj.hide_render = True
     assign_material(obj, material)
     collection.objects.link(obj)
     return obj
@@ -290,6 +293,16 @@ def remove_live_route():
         obj = bpy.data.objects.get(n)
         if obj is not None:
             bpy.data.objects.remove(obj, do_unlink=True)
+
+
+def clear_navmesh_objects(collection: bpy.types.Collection) -> int:
+    """Remove all navmesh wireframe objects from a collection."""
+    n = 0
+    for obj in list(collection.objects):
+        if obj.name.startswith("JuPedSim_Navmesh_"):
+            bpy.data.objects.remove(obj, do_unlink=True)
+            n += 1
+    return n
 
 
 def clear_routes(collection: bpy.types.Collection) -> int:
