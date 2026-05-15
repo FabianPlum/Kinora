@@ -25,6 +25,9 @@ from .geometry import assign_material, get_or_create_material
 
 NAVMESH_COLLECTION = "JuPedSim_Navmesh"
 ROUTE_COLLECTION = "JuPedSim_Routes"
+LIVE_ROUTE_NAME = "Route_Live"
+LIVE_FROM_NAME = "Route_Live_From"
+LIVE_TO_NAME = "Route_Live_To"
 
 # Sit just above the slab so wire edges are visible without z-fighting.
 _NAVMESH_Z_OFFSET = 0.02
@@ -195,11 +198,105 @@ def _add_route_endpoint(name, xy, z, collection, material):
     collection.objects.link(obj)
 
 
+def update_live_route(
+    level_id: int,
+    from_xy: tuple[float, float],
+    to_xy: tuple[float, float],
+    z: float,
+    collection: bpy.types.Collection,
+    mat_cache: dict,
+) -> tuple[float | None, str | None]:
+    """Replace the single live-route curve in place. Cheap to call per mousemove.
+
+    Returns ``(length, error)``. ``length`` is None when the query was
+    rejected (out of walkable area, empty path); the curve is hidden in
+    that case rather than removed, so toggling stays smooth.
+    """
+    engine = _engines.get(int(level_id))
+    if engine is None:
+        return None, f"No routing engine for level {level_id}"
+
+    if not engine.is_routable(from_xy) or not engine.is_routable(to_xy):
+        _hide_live_route()
+        return None, None
+
+    try:
+        waypoints = engine.compute_waypoints(from_xy, to_xy)
+    except Exception as exc:  # noqa: BLE001
+        _hide_live_route()
+        return None, f"compute_waypoints failed: {exc}"
+
+    if len(waypoints) < 2:
+        _hide_live_route()
+        return None, None
+
+    length = 0.0
+    for a, b in zip(waypoints[:-1], waypoints[1:], strict=True):
+        length += math.hypot(a[0] - b[0], a[1] - b[1])
+
+    route_z = z + _ROUTE_Z_OFFSET
+    material = get_or_create_material(mat_cache, "JuPedSim_Route_Material", (1.0, 0.05, 0.05, 1.0))
+    _set_live_route_curve(waypoints, route_z, collection, material)
+    _set_live_endpoint(LIVE_FROM_NAME, from_xy, route_z, collection, material)
+    _set_live_endpoint(LIVE_TO_NAME, to_xy, route_z, collection, material)
+    return length, None
+
+
+def _set_live_route_curve(waypoints, route_z, collection, material):
+    obj = bpy.data.objects.get(LIVE_ROUTE_NAME)
+    if obj is None or obj.type != "CURVE":
+        curve_data = bpy.data.curves.new(name=LIVE_ROUTE_NAME, type="CURVE")
+        curve_data.dimensions = "3D"
+        curve_data.resolution_u = 2
+        curve_data.bevel_depth = 0.05
+        curve_data.bevel_resolution = 2
+        obj = bpy.data.objects.new(LIVE_ROUTE_NAME, curve_data)
+        assign_material(obj, material)
+        collection.objects.link(obj)
+    curve_data = obj.data
+    curve_data.splines.clear()
+    spline = curve_data.splines.new("POLY")
+    spline.points.add(len(waypoints) - 1)
+    for i, pt in enumerate(waypoints):
+        spline.points[i].co = (float(pt[0]), float(pt[1]), route_z, 1.0)
+    spline.use_cyclic_u = False
+    obj.hide_viewport = False
+
+
+def _set_live_endpoint(name, xy, z, collection, material):
+    obj = bpy.data.objects.get(name)
+    if obj is None or obj.type != "MESH":
+        mesh = bpy.data.meshes.new(f"{name}_Mesh")
+        bm = bmesh.new()
+        bmesh.ops.create_uvsphere(bm, u_segments=12, v_segments=8, radius=0.15)
+        bm.to_mesh(mesh)
+        bm.free()
+        obj = bpy.data.objects.new(name, mesh)
+        assign_material(obj, material)
+        collection.objects.link(obj)
+    obj.location = (float(xy[0]), float(xy[1]), float(z))
+    obj.hide_viewport = False
+
+
+def _hide_live_route():
+    for n in (LIVE_ROUTE_NAME, LIVE_FROM_NAME, LIVE_TO_NAME):
+        obj = bpy.data.objects.get(n)
+        if obj is not None:
+            obj.hide_viewport = True
+
+
+def remove_live_route():
+    for n in (LIVE_ROUTE_NAME, LIVE_FROM_NAME, LIVE_TO_NAME):
+        obj = bpy.data.objects.get(n)
+        if obj is not None:
+            bpy.data.objects.remove(obj, do_unlink=True)
+
+
 def clear_routes(collection: bpy.types.Collection) -> int:
     """Remove all ``Route_*`` objects from a collection. Returns count."""
     n = 0
     for obj in list(collection.objects):
-        if obj.name.startswith("Route_L"):
+        if obj.name.startswith("Route_"):
             bpy.data.objects.remove(obj, do_unlink=True)
             n += 1
     return n

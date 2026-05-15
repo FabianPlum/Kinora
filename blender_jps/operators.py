@@ -560,6 +560,114 @@ class JUPEDSIM_OT_route_endpoint_from_cursor(Operator):
         return {"FINISHED"}
 
 
+class JUPEDSIM_OT_pick_route(Operator):
+    """Click-and-drag in the viewport to interactively query the router."""
+
+    bl_idname = "jupedsim.pick_route"
+    bl_label = "Pick Route"
+    bl_description = (
+        "Press to start, then LMB-drag in the viewport to query the routing engine "
+        "live. Release to finalize, ESC/RMB to cancel."
+    )
+
+    _level_id: int = 0
+    _z: float = 0.0
+    _from_xy: tuple[float, float] | None = None
+    _last_length: float | None = None
+    _collection: bpy.types.Collection | None = None
+    _materials: dict | None = None
+
+    @classmethod
+    def poll(cls, context):
+        return context.area is not None and context.area.type == "VIEW_3D"
+
+    def invoke(self, context: Context, event: bpy.types.Event) -> set[str]:
+        if not nav.available_levels():
+            self.report({"ERROR"}, "No routing engines built. Load a simulation first.")
+            return {"CANCELLED"}
+        props = context.scene.jupedsim_props
+        level_id = int(props.route_level)
+        if level_id not in nav.available_levels():
+            level_id = nav.available_levels()[0]
+        self._level_id = level_id
+        self._z = _level_z_lookup(level_id)
+        self._from_xy = None
+        self._last_length = None
+        self._materials = {}
+        if nav.ROUTE_COLLECTION in bpy.data.collections:
+            self._collection = bpy.data.collections[nav.ROUTE_COLLECTION]
+        else:
+            self._collection = geo.get_or_create_collection(nav.ROUTE_COLLECTION)
+        nav.remove_live_route()
+        context.workspace.status_text_set(
+            "Route picker: LMB to set From, drag to query, release to finalize, ESC/RMB to cancel"
+        )
+        context.window_manager.modal_handler_add(self)
+        return {"RUNNING_MODAL"}
+
+    def modal(self, context: Context, event: bpy.types.Event) -> set[str]:
+        if event.type in {"ESC", "RIGHTMOUSE"} and event.value == "PRESS":
+            return self._end(context, cancel=True)
+
+        if event.type == "LEFTMOUSE" and event.value == "PRESS":
+            xy = self._screen_to_world(context, event)
+            if xy is None:
+                return {"RUNNING_MODAL"}
+            self._from_xy = xy
+            return {"RUNNING_MODAL"}
+
+        if event.type == "MOUSEMOVE" and self._from_xy is not None:
+            xy = self._screen_to_world(context, event)
+            if xy is None:
+                return {"RUNNING_MODAL"}
+            length, err = nav.update_live_route(
+                self._level_id, self._from_xy, xy, self._z, self._collection, self._materials
+            )
+            self._last_length = length
+            msg = (
+                f"Route length: {length:.2f} m" if length is not None else "(out of walkable area)"
+            )
+            if err:
+                msg = err
+            context.workspace.status_text_set(f"Route picker — {msg}")
+            return {"RUNNING_MODAL"}
+
+        if event.type == "LEFTMOUSE" and event.value == "RELEASE":
+            self._from_xy = None
+            return {"RUNNING_MODAL"}
+
+        return {"PASS_THROUGH"}
+
+    def _end(self, context: Context, cancel: bool) -> set[str]:
+        context.workspace.status_text_set(None)
+        if cancel:
+            nav.remove_live_route()
+            return {"CANCELLED"}
+        return {"FINISHED"}
+
+    def _screen_to_world(self, context: Context, event: bpy.types.Event):
+        from bpy_extras import view3d_utils
+        from mathutils import Vector
+        from mathutils.geometry import intersect_line_plane
+
+        region = context.region
+        rv3d = context.region_data
+        if region is None or rv3d is None:
+            return None
+        coord = (event.mouse_region_x, event.mouse_region_y)
+        origin = view3d_utils.region_2d_to_origin_3d(region, rv3d, coord)
+        direction = view3d_utils.region_2d_to_vector_3d(region, rv3d, coord)
+        hit = intersect_line_plane(
+            origin,
+            origin + direction * 10000.0,
+            Vector((0.0, 0.0, self._z)),
+            Vector((0.0, 0.0, 1.0)),
+        )
+        if hit is None:
+            return None
+        return (float(hit.x), float(hit.y))
+
+
 def _level_z_lookup(level_id: int) -> float:
     """Read level z from the geometry slab object if present, else 0.0."""
     obj = bpy.data.objects.get(f"JuPedSim_Level_{level_id}")
@@ -580,6 +688,7 @@ classes = [
     JUPEDSIM_OT_compute_route,
     JUPEDSIM_OT_clear_routes,
     JUPEDSIM_OT_route_endpoint_from_cursor,
+    JUPEDSIM_OT_pick_route,
 ]
 
 

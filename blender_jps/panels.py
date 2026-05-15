@@ -183,6 +183,13 @@ class JUPEDSIM_PT_navmesh_panel(Panel):
         box.label(text="Router Query", icon="DRIVER_DISTANCE")
         if len(levels) > 1:
             box.prop(props, "route_level", text="Level")
+        row = box.row()
+        row.scale_y = 1.3
+        row.operator(
+            "jupedsim.pick_route", text="Pick Route (LMB-drag)", icon="RESTRICT_SELECT_OFF"
+        )
+        box.separator()
+        box.label(text="Or enter coordinates:")
         row = box.row(align=True)
         row.prop(props, "route_from", text="From")
         op = row.operator("jupedsim.route_endpoint_from_cursor", text="", icon="CURSOR")
