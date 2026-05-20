@@ -3,6 +3,7 @@ set -euo pipefail
 
 zip -r Kinora.zip kinora \
     -x "kinora/deps/*" \
+    -x "kinora/deps.deleted-*/*" \
     -x "kinora/tests/*" \
     -x "kinora/examples/040_l020_g1_rf_h-.h5" \
     -x "kinora/__pycache__/*" \
