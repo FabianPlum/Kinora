@@ -4,15 +4,15 @@
 <img src=images/kinora-logo-dark.svg#gh-dark-mode-only height="100">
 <img src=images/kinora-logo-light.svg#gh-light-mode-only height="100">
 
-# Kinora - JuPedSim Trajectory Visualiser for Blender
+# Kinora - Pedestrian Data Trajectory Visualiser for Blender
 
-A Blender addon for importing JuPedSim simulation SQLite files, visualizing agent trajectories and simulation geometry.
+A Blender addon for importing pedestrain simulation as well as experimental data files, visualizing agent trajectories and simulation geometry.
 
 ![Addon Preview](images/preview_v2.jpg)
 
 ## Features
 
-- **Import JuPedSim SQLite files**: Load trajectory data and walkable area geometry
+- **Import (JuPedSim) SQLite or h5 files**: Load trajectory data and walkable area geometry
 - **Import HDF5 files**: Load trajectory data and walkable area geometry
 - **Animated Agents**: Each agent is represented as an animated sphere following their trajectory
 - **Agent Path Visualization**: Each agent's complete path is automatically created as a curve object
