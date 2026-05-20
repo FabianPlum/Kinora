@@ -1,15 +1,18 @@
-[![Lint](https://github.com/FabianPlum/BlenderJPS/actions/workflows/lint.yml/badge.svg)](https://github.com/FabianPlum/BlenderJPS/actions/workflows/lint.yml)
-[![Blender Addon CI](https://github.com/FabianPlum/BlenderJPS/actions/workflows/blender.yml/badge.svg)](https://github.com/FabianPlum/BlenderJPS/actions/workflows/blender.yml)
+[![Lint](https://github.com/FabianPlum/Kinora/actions/workflows/lint.yml/badge.svg)](https://github.com/FabianPlum/Kinora/actions/workflows/lint.yml)
+[![Blender Addon CI](https://github.com/FabianPlum/Kinora/actions/workflows/blender.yml/badge.svg)](https://github.com/FabianPlum/Kinora/actions/workflows/blender.yml)
 
-# BlenderJPS - JuPedSim Trajectory Importer for Blender
+<img src=images/kinora-logo-dark.svg#gh-dark-mode-only height="100">
+<img src=images/kinora-logo-light.svg#gh-light-mode-only height="100">
 
-A Blender addon for importing JuPedSim simulation SQLite files, visualizing agent trajectories and simulation geometry.
+# Kinora - Pedestrian Data Trajectory Visualiser for Blender
+
+A Blender addon for importing pedestrain simulation as well as experimental data files, visualizing agent trajectories and simulation geometry.
 
 ![Addon Preview](images/preview_v2.jpg)
 
 ## Features
 
-- **Import JuPedSim SQLite files**: Load trajectory data and walkable area geometry
+- **Import (JuPedSim) SQLite or h5 files**: Load trajectory data and walkable area geometry
 - **Import HDF5 files**: Load trajectory data and walkable area geometry
 - **Animated Agents**: Each agent is represented as an animated sphere following their trajectory
 - **Agent Path Visualization**: Each agent's complete path is automatically created as a curve object
@@ -23,23 +26,23 @@ A Blender addon for importing JuPedSim simulation SQLite files, visualizing agen
 
 - **Blender 4.0+** (Blender 3.x is not supported)
   - Development and testing on Blender 5.0
-  - Should work on Blender 4.0+ but not actively tested
-- **Python packages**: `pedpy`, `numpy<2.0` (installed automatically via addon)
+  - Should work on Blender 4.0+ and 5.1+ but not actively tested
+- **Python packages**: `pedpy` and its transitive deps (installed automatically via addon)
 
 > **Note:** `pedpy` is kept mainly for legacy compatibility and because we currently rely on its `shapely` dependency for geometry processing. SQLite reading is now handled via a streaming approach inspired by the [JuPedSim visualizer's reader](https://github.com/PedestrianDynamics/jupedsim/tree/master/python_modules/jupedsim_visualizer/jupedsim_visualizer).
 
 ## Installation
 
-1. **Download the latest release** from [GitHub Releases](https://github.com/FabianPlum/BlenderJPS/releases)
+1. **Download the latest release** from [GitHub Releases](https://github.com/FabianPlum/Kinora/releases)
 2. **Open Blender as your normal user** (do not run as Administrator/root for installation)
 3. Go to **Edit → Preferences → Add-ons**
 4. Click **Install...** and select the downloaded ZIP file
-5. Enable the addon by checking the box next to "BlenderJPS - JuPedSim Importer"
+5. Enable the addon by checking the box next to "Kinora - JuPedSim Visualiser"
 6. **(Recommended)** If you started Blender without a terminal (e.g. on Windows by double‑clicking the icon), open **Window → Toggle System Console** before the next step. You can then see pip’s progress while dependencies install; Blender may look unresponsive for one or two minutes.
 7. Expand the addon settings and click **Install Dependencies** (this installs `pedpy` and `numpy<2.0` into the addon folder)
 8. **Restart Blender**
 
-The **JuPedSim** panel will appear in the right sidebar of the 3D Viewport (press `N` if the sidebar is hidden).
+The **Kinora** panel will appear in the right sidebar of the 3D Viewport (press `N` if the sidebar is hidden).
 
 > **Important:** Run Blender as the same user you use every day. If you install the addon or dependencies while Blender is run as Administrator/root, they are installed in that account’s Blender config. When you then start Blender as a normal user, the addon may not appear, or pedpy may not be found. Always install and use Blender as your normal user.
 
@@ -47,7 +50,7 @@ The **JuPedSim** panel will appear in the right sidebar of the 3D Viewport (pres
 
 1. Open Blender and go to the **3D Viewport**
 2. Open the sidebar (press `N` if hidden)
-3. Find the **JuPedSim** tab
+3. Find the **Kinora** tab
 4. Click **Browse...** to select your SQLite trajectory file
 5. (Optional) Adjust **Load Every Nth Frame** to downsample temporal resolution for faster loading
    - `1` = Load all frames (default)
@@ -59,11 +62,11 @@ The **JuPedSim** panel will appear in the right sidebar of the 3D Viewport (pres
 
 ### What Gets Created
 
-- **JuPedSim_Agents** collection: Contains animated empty objects (sphere display) for each agent
+- **Kinora_Agents** collection: Contains animated empty objects (sphere display) for each agent
   - Agents automatically hide after reaching their destination
   - Path curves for each agent showing their complete trajectory (hidden by default)
 - **Big Data Mode**: Creates a single particle system driven by streamed frame updates
-- **JuPedSim_Geometry** collection: Contains curve objects for boundaries and obstacles
+- **Kinora_Geometry** collection: Contains curve objects for boundaries and obstacles
 - Animation timeline is automatically set to match the simulation frames
 
 ### Display Options
@@ -92,7 +95,7 @@ The addon uses [PedPy](https://github.com/PedestrianDynamics/PedPy) (mainly for 
 - **Fix:** Run Blender as your normal user. Remove the addon from **Edit → Preferences → Add-ons** if it was installed as root. Install the addon again (Install... → enable) and click **Install Dependencies** while Blender is running as your normal user. Restart Blender as normal user. Dependencies are installed into the addon folder, so no admin rights are needed.
 
 ### "Dependencies not installed" error
-- Install dependencies from **Edit → Preferences → Add-ons** → BlenderJPS → **Install Dependencies**. No Administrator/root required.
+- Install dependencies from **Edit → Preferences → Add-ons** → Kinora → **Install Dependencies**. No Administrator/root required.
 - Check the Blender console (Window → Toggle System Console on Windows; or run Blender from Terminal on macOS/Linux) for error messages
 - Try reinstalling dependencies from the addon preferences
 
@@ -117,7 +120,7 @@ For developers who want to work with the git repository and have changes reflect
 
 ### Development Installation (Symbolic Link)
 
-Create a symbolic link to your `blender_jps` folder in your Blender addons directory. This allows for easier development as changes are reflected immediately.
+Create a symbolic link to your `kinora` folder in your Blender addons directory. This allows for easier development as changes are reflected immediately.
 
 **Windows:**
 1. Open Command Prompt or PowerShell as Administrator
@@ -128,9 +131,17 @@ Create a symbolic link to your `blender_jps` folder in your Blender addons direc
    Replace `<version>` with your Blender version (e.g., `4.2`)
 3. Create a symbolic link:
    ```cmd
-   mklink /D blender_jps "C:\path\to\BlenderJPS\blender_jps"
+   mklink /D kinora "C:\path\to\Kinora\kinora"
    ```
-   Replace `C:\path\to\BlenderJPS\blender_jps` with the actual path to your `blender_jps` folder
+   Replace `C:\path\to\Kinora\kinora` with the actual path to your `kinora` folder
+
+> **No admin? Use a junction instead.** Symbolic links on Windows require Administrator (or Developer Mode). A directory junction behaves the same for our purposes and needs neither. From a normal PowerShell or cmd prompt:
+> ```powershell
+> New-Item -ItemType Junction `
+>   -Path  "$env:APPDATA\Blender Foundation\Blender\<version>\scripts\addons\kinora" `
+>   -Target "C:\path\to\Kinora\kinora"
+> ```
+> or in cmd: `mklink /J "%APPDATA%\Blender Foundation\Blender\<version>\scripts\addons\kinora" "C:\path\to\Kinora\kinora"`. Avoid Git Bash's `ln -s` here — without proper symlink support enabled it silently makes a directory copy, so repo edits won't reach Blender.
 
 **macOS/Linux:**
 1. Open Terminal
@@ -142,12 +153,12 @@ Create a symbolic link to your `blender_jps` folder in your Blender addons direc
    ```
 3. Create a symbolic link:
    ```bash
-   ln -s /path/to/BlenderJPS/blender_jps blender_jps
+   ln -s /path/to/Kinora/kinora kinora
    ```
 
 4. Open Blender
 5. Go to **Edit → Preferences → Add-ons**
-6. Search for "JuPedSim" and enable the addon
+6. Search for "Kinora" and enable the addon
 
 ### Pre-commit Hooks
 
@@ -176,4 +187,3 @@ Contributions are welcome! Please feel free to submit issues or pull requests.
 
 - [JuPedSim](https://github.com/PedestrianDynamics/jupedsim) - The pedestrian dynamics simulator
 - [PedPy](https://github.com/PedestrianDynamics/PedPy) - Python library for pedestrian dynamics analysis
-

@@ -1,6 +1,6 @@
-"""BlenderJPS - JuPedSim Trajectory Importer for Blender.
+"""Kinora - Pedestrian Data Trajectory Visualiser for Blender.
 
-A Blender addon for importing JuPedSim trajectory files (SQLite and HDF5).
+A Blender addon for visualising pedestrian data trajectory files (JuPedSim SQLite and HDF5).
 """
 
 import os
@@ -12,14 +12,14 @@ ADDON_DIR = os.path.dirname(os.path.realpath(__file__))
 install_utils.ensure_deps_in_path(ADDON_DIR)
 
 bl_info = {
-    "name": "BlenderJPS - JuPedSim Importer",
+    "name": "Kinora - Pedestrian Data Visualiser",
     "author": "Fabian Plum & Mohcine Chraibi",
-    "version": (0, 1, 6),
+    "version": (0, 2, 0),
     "blender": (4, 0, 0),
-    "location": "View3D > Sidebar > JuPedSim",
-    "description": "Import JuPedSim trajectory files (SQLite and HDF5) with agent animations and geometry",
-    "doc_url": "https://github.com/FabianPlum/BlenderJPS",
-    "tracker_url": "https://github.com/FabianPlum/BlenderJPS/issues",
+    "location": "View3D > Sidebar > Kinora",
+    "description": "Visualise Pedestrian Data trajectory files (SQLite and HDF5) with agent animations and geometry",
+    "doc_url": "https://github.com/FabianPlum/Kinora",
+    "tracker_url": "https://github.com/FabianPlum/Kinora/issues",
     "category": "Import-Export",
     "support": "COMMUNITY",
 }
@@ -40,10 +40,10 @@ from . import operators, panels, preferences
 
 def update_path_visibility(self, context):
     """Update visibility of all agent path curves when property changes."""
-    if "JuPedSim_Agents" not in bpy.data.collections:
+    if "Kinora_Agents" not in bpy.data.collections:
         return
 
-    collection = bpy.data.collections["JuPedSim_Agents"]
+    collection = bpy.data.collections["Kinora_Agents"]
     for obj in collection.objects:
         if obj.name.startswith("Path_Agent_"):
             obj.hide_viewport = not self.show_paths
@@ -52,28 +52,28 @@ def update_path_visibility(self, context):
 
 def update_agent_scale(self, context):
     """Update scale of all agent meshes when property changes."""
-    if "JuPedSim_Agents" not in bpy.data.collections:
+    if "Kinora_Agents" not in bpy.data.collections:
         return
-    collection = bpy.data.collections["JuPedSim_Agents"]
+    collection = bpy.data.collections["Kinora_Agents"]
     for obj in collection.objects:
         if obj.name.startswith("Agent_") and obj.type == "MESH":
             obj.scale = (self.agent_scale, self.agent_scale, self.agent_scale)
-        if obj.name == "JuPedSim_ParticleInstance" and obj.type == "MESH":
+        if obj.name == "Kinora_ParticleInstance" and obj.type == "MESH":
             obj.scale = (self.agent_scale, self.agent_scale, self.agent_scale)
 
 
 def update_geometry_thickness(self, context):
     """Update bevel thickness for all geometry curves when property changes."""
-    if "JuPedSim_Geometry" not in bpy.data.collections:
+    if "Kinora_Geometry" not in bpy.data.collections:
         return
-    collection = bpy.data.collections["JuPedSim_Geometry"]
+    collection = bpy.data.collections["Kinora_Geometry"]
     for obj in collection.objects:
         if obj.type == "CURVE":
             obj.data.bevel_depth = self.geometry_thickness
 
 
-class JuPedSimProperties(PropertyGroup):
-    """Property group for JuPedSim addon settings."""
+class KinoraProperties(PropertyGroup):
+    """Property group for Kinora addon settings."""
 
     sqlite_file: StringProperty(
         name="SQLite File",
@@ -163,7 +163,7 @@ class JuPedSimProperties(PropertyGroup):
 
 # List of classes to register
 classes = [
-    JuPedSimProperties,
+    KinoraProperties,
 ]
 
 
@@ -179,15 +179,15 @@ def register():
         bpy.utils.register_class(cls)
 
     # Add properties to scene
-    bpy.types.Scene.jupedsim_props = PointerProperty(type=JuPedSimProperties)
+    bpy.types.Scene.kinora_props = PointerProperty(type=KinoraProperties)
 
-    print("BlenderJPS addon registered successfully")
+    print("Kinora addon registered successfully")
 
 
 def unregister():
     """Unregister the addon."""
     # Remove properties from scene
-    del bpy.types.Scene.jupedsim_props
+    del bpy.types.Scene.kinora_props
 
     # Unregister main classes
     for cls in reversed(classes):
@@ -198,7 +198,7 @@ def unregister():
     operators.unregister()
     preferences.unregister()
 
-    print("BlenderJPS addon unregistered")
+    print("Kinora addon unregistered")
 
 
 if __name__ == "__main__":

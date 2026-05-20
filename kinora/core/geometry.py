@@ -1,4 +1,4 @@
-"""Blender 3D object creation for JuPedSim geometry, agents, and paths."""
+"""Blender 3D object creation for Kinora geometry, agents, and paths."""
 
 from array import array
 
@@ -73,7 +73,7 @@ def create_geometry(context, geometry, collection, mat_cache):
         min_y = bounds[1] - pad_y
         max_y = bounds[3] + pad_y
 
-        plane_mesh = bpy.data.meshes.new("JuPedSim_Ground_Plane_Mesh")
+        plane_mesh = bpy.data.meshes.new("Kinora_Ground_Plane_Mesh")
         bm = bmesh.new()
         verts = [
             bm.verts.new((min_x, min_y, 0.0)),
@@ -84,10 +84,10 @@ def create_geometry(context, geometry, collection, mat_cache):
         bm.faces.new(verts)
         bm.to_mesh(plane_mesh)
         bm.free()
-        plane_obj = bpy.data.objects.new("JuPedSim_Ground_Plane", plane_mesh)
+        plane_obj = bpy.data.objects.new("Kinora_Ground_Plane", plane_mesh)
         plane_obj.location = (0.0, 0.0, 0.0)
         plane_material = get_or_create_material(
-            mat_cache, "JuPedSim_Ground_Plane_Material", (0.85, 0.85, 0.85, 1.0)
+            mat_cache, "Kinora_Ground_Plane_Material", (0.85, 0.85, 0.85, 1.0)
         )
         assign_material(plane_obj, plane_material)
         collection.objects.link(plane_obj)
@@ -129,12 +129,12 @@ def _create_curve_from_coords(context, name, coords, collection, mat_cache, clos
 
     curve_obj = bpy.data.objects.new(name, curve_data)
     curve_material = get_or_create_material(
-        mat_cache, "JuPedSim_Geometry_Material", (0.2, 0.2, 0.2, 1.0)
+        mat_cache, "Kinora_Geometry_Material", (0.2, 0.2, 0.2, 1.0)
     )
     assign_material(curve_obj, curve_material)
     collection.objects.link(curve_obj)
 
-    curve_data.bevel_depth = context.scene.jupedsim_props.geometry_thickness
+    curve_data.bevel_depth = context.scene.kinora_props.geometry_thickness
     curve_data.bevel_resolution = 2
 
     return curve_obj
@@ -147,7 +147,7 @@ def _get_shared_agent_mesh():
     """Return a shared icosphere mesh, creating it once."""
     global _shared_agent_mesh
     if _shared_agent_mesh is None or _shared_agent_mesh.name not in bpy.data.meshes:
-        mesh = bpy.data.meshes.new("JuPedSim_Agent_Shared_Mesh")
+        mesh = bpy.data.meshes.new("Kinora_Agent_Shared_Mesh")
         bm = bmesh.new()
         bmesh.ops.create_icosphere(bm, subdivisions=2, radius=0.5)
         bm.to_mesh(mesh)
@@ -163,10 +163,10 @@ def create_agent(context, agent_id, collection, mat_cache):
     mesh = _get_shared_agent_mesh()
     agent_obj = bpy.data.objects.new(f"Agent_{agent_id}", mesh)
     agent_material = get_or_create_material(
-        mat_cache, "JuPedSim_Agent_Material", (0.95, 0.7, 0.1, 1.0)
+        mat_cache, "Kinora_Agent_Material", (0.95, 0.7, 0.1, 1.0)
     )
     assign_material(agent_obj, agent_material)
-    scale = context.scene.jupedsim_props.agent_scale
+    scale = context.scene.kinora_props.agent_scale
     agent_obj.scale = (scale, scale, scale)
 
     collection.objects.link(agent_obj)
@@ -207,7 +207,7 @@ def create_big_data_points(context, agent_ids, agents_collection, mat_cache):
     if not agent_ids:
         return
 
-    mesh = bpy.data.meshes.new("JuPedSim_Particles")
+    mesh = bpy.data.meshes.new("Kinora_Particles")
     mesh.vertices.add(len(agent_ids))
     hide_z = -1.0e6
     coords = array("f", [0.0] * (len(agent_ids) * 3))
@@ -216,12 +216,12 @@ def create_big_data_points(context, agent_ids, agents_collection, mat_cache):
     mesh.vertices.foreach_set("co", coords)
     mesh.update()
 
-    obj = bpy.data.objects.new("JuPedSim_Particles", mesh)
+    obj = bpy.data.objects.new("Kinora_Particles", mesh)
     obj.display_type = "WIRE"
     obj.show_in_front = True
     agents_collection.objects.link(obj)
 
-    instance_mesh = bpy.data.meshes.new("JuPedSim_ParticleInstanceMesh")
+    instance_mesh = bpy.data.meshes.new("Kinora_ParticleInstanceMesh")
     bm = bmesh.new()
     bmesh.ops.create_icosphere(bm, subdivisions=1, radius=0.5)
     bm.to_mesh(instance_mesh)
@@ -229,8 +229,8 @@ def create_big_data_points(context, agent_ids, agents_collection, mat_cache):
     instance_mesh.polygons.foreach_set("use_smooth", [True] * len(instance_mesh.polygons))
     instance_mesh.update()
 
-    instance_obj = bpy.data.objects.new("JuPedSim_ParticleInstance", instance_mesh)
-    plane_obj = bpy.data.objects.get("JuPedSim_Ground_Plane")
+    instance_obj = bpy.data.objects.new("Kinora_ParticleInstance", instance_mesh)
+    plane_obj = bpy.data.objects.get("Kinora_Ground_Plane")
     if plane_obj:
         bb = plane_obj.bound_box
         center_x = (bb[0][0] + bb[6][0]) * 0.5
@@ -243,17 +243,17 @@ def create_big_data_points(context, agent_ids, agents_collection, mat_cache):
     else:
         instance_obj.location = (0.0, 0.0, -1.0)
     agent_material = get_or_create_material(
-        mat_cache, "JuPedSim_Agent_Material", (0.95, 0.7, 0.1, 1.0)
+        mat_cache, "Kinora_Agent_Material", (0.95, 0.7, 0.1, 1.0)
     )
     assign_material(instance_obj, agent_material)
-    scale = context.scene.jupedsim_props.agent_scale
+    scale = context.scene.kinora_props.agent_scale
     instance_obj.scale = (scale, scale, scale)
     instance_obj.hide_viewport = False
     instance_obj.hide_render = False
     instance_obj.display_type = "SOLID"
     agents_collection.objects.link(instance_obj)
 
-    ps_settings = bpy.data.particles.new("JuPedSim_Particles_Settings")
+    ps_settings = bpy.data.particles.new("Kinora_Particles_Settings")
     ps_settings.type = "HAIR"
     ps_settings.count = len(agent_ids)
     ps_settings.emit_from = "VERT"
@@ -264,7 +264,7 @@ def create_big_data_points(context, agent_ids, agents_collection, mat_cache):
     ps_settings.display_method = "RENDER"
     ps_settings.display_percentage = 100
 
-    ps_mod = obj.modifiers.new("JuPedSimParticles", type="PARTICLE_SYSTEM")
+    ps_mod = obj.modifiers.new("KinoraParticles", type="PARTICLE_SYSTEM")
     ps_mod.particle_system.settings = ps_settings
 
     return obj.name

@@ -1,6 +1,6 @@
 """
-BlenderJPS UI Panels
-User interface panels for the JuPedSim importer.
+Kinora UI Panels
+User interface panels for the Kinora addon.
 """
 
 import os
@@ -13,18 +13,18 @@ from .install_utils import is_pedpy_installed
 ADDON_DIR = os.path.dirname(os.path.realpath(__file__))
 
 
-class JUPEDSIM_PT_main_panel(Panel):
-    """Main panel for JuPedSim importer in the 3D Viewport sidebar."""
+class KINORA_PT_main_panel(Panel):
+    """Main panel for Kinora in the 3D Viewport sidebar."""
 
-    bl_label = "JuPedSim Importer"
-    bl_idname = "JUPEDSIM_PT_main_panel"
+    bl_label = "Kinora"
+    bl_idname = "KINORA_PT_main_panel"
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
-    bl_category = "JuPedSim"
+    bl_category = "Kinora"
 
     def draw(self, context: Context) -> None:
         layout = self.layout
-        props = context.scene.jupedsim_props
+        props = context.scene.kinora_props
 
         # Check dependencies
         if not is_pedpy_installed(ADDON_DIR):
@@ -32,11 +32,9 @@ class JUPEDSIM_PT_main_panel(Panel):
             box.alert = True
             box.label(text="Dependencies not installed!", icon="ERROR")
             box.label(text="Go to Edit > Preferences > Add-ons")
-            box.label(text="Find 'BlenderJPS' and install dependencies")
+            box.label(text="Find 'Kinora' and install dependencies")
             box.separator()
-            box.operator(
-                "jupedsim.install_dependencies", text="Install Dependencies", icon="IMPORT"
-            )
+            box.operator("kinora.install_dependencies", text="Install Dependencies", icon="IMPORT")
             return
 
         # File selection section
@@ -52,7 +50,7 @@ class JUPEDSIM_PT_main_panel(Panel):
         else:
             box.label(text="No file selected", icon="QUESTION")
 
-        box.operator("jupedsim.select_file", text="Browse...", icon="FILEBROWSER")
+        box.operator("kinora.select_file", text="Browse...", icon="FILEBROWSER")
 
         layout.separator()
 
@@ -73,7 +71,7 @@ class JUPEDSIM_PT_main_panel(Panel):
         # Load button
         row = layout.row()
         row.scale_y = 1.5
-        row.operator("jupedsim.load_simulation", text="Load Simulation", icon="IMPORT")
+        row.operator("kinora.load_simulation", text="Load Simulation", icon="IMPORT")
 
         if props.loading_in_progress:
             box = layout.box()
@@ -96,8 +94,8 @@ class JUPEDSIM_PT_main_panel(Panel):
         row = box.row()
         row.prop(props, "show_paths", text="Show Agent Paths")
         has_paths = False
-        if "JuPedSim_Agents" in bpy.data.collections:
-            agents_collection = bpy.data.collections["JuPedSim_Agents"]
+        if "Kinora_Agents" in bpy.data.collections:
+            agents_collection = bpy.data.collections["Kinora_Agents"]
             path_objects = [
                 obj for obj in agents_collection.objects if obj.name.startswith("Path_Agent_")
             ]
@@ -114,14 +112,14 @@ class JUPEDSIM_PT_main_panel(Panel):
         box.label(text="Geometry → Curve boundaries")
 
 
-class JUPEDSIM_PT_info_panel(Panel):
+class KINORA_PT_info_panel(Panel):
     """Info panel showing loaded simulation statistics."""
 
     bl_label = "Trajectory Info"
-    bl_idname = "JUPEDSIM_PT_info_panel"
+    bl_idname = "KINORA_PT_info_panel"
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
-    bl_category = "JuPedSim"
+    bl_category = "Kinora"
     bl_options = {"DEFAULT_CLOSED"}
 
     def draw(self, context: Context) -> None:
@@ -131,13 +129,13 @@ class JUPEDSIM_PT_info_panel(Panel):
         agents_count = 0
         geometry_count = 0
 
-        if context.scene.jupedsim_props.loaded_agent_count:
-            agents_count = context.scene.jupedsim_props.loaded_agent_count
-        elif "JuPedSim_Agents" in bpy.data.collections:
-            agents_count = len(bpy.data.collections["JuPedSim_Agents"].objects)
+        if context.scene.kinora_props.loaded_agent_count:
+            agents_count = context.scene.kinora_props.loaded_agent_count
+        elif "Kinora_Agents" in bpy.data.collections:
+            agents_count = len(bpy.data.collections["Kinora_Agents"].objects)
 
-        if "JuPedSim_Geometry" in bpy.data.collections:
-            geometry_count = len(bpy.data.collections["JuPedSim_Geometry"].objects)
+        if "Kinora_Geometry" in bpy.data.collections:
+            geometry_count = len(bpy.data.collections["Kinora_Geometry"].objects)
 
         box = layout.box()
         box.label(text=f"Agents loaded: {agents_count}")
@@ -146,8 +144,8 @@ class JUPEDSIM_PT_info_panel(Panel):
 
 
 classes = [
-    JUPEDSIM_PT_main_panel,
-    JUPEDSIM_PT_info_panel,
+    KINORA_PT_main_panel,
+    KINORA_PT_info_panel,
 ]
 
 

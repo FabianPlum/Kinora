@@ -10,7 +10,7 @@ uv.lock
 *.blend
 *.blend1
 *.blend2
-blender_jps/modules/
+kinora/modules/
 
 # IDE
 .idea/
@@ -26,4 +26,4 @@ Thumbs.db
 
 # emacs
 *~
-/blender_jps/deps/
+/kinora/deps/

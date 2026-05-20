@@ -42,7 +42,7 @@ def _parse_args():
         "--require-operator",
         action="append",
         default=[],
-        help="Operator that must exist, e.g. 'jupedsim.load_simulation' (repeatable)",
+        help="Operator that must exist, e.g. 'kinora.load_simulation' (repeatable)",
     )
     p.add_argument(
         "--factory-startup",
@@ -141,18 +141,18 @@ def _test_sqlite_loading(addon_name):
     db_path = _create_test_sqlite_file()
 
     try:
-        bpy.context.scene.jupedsim_props.sqlite_file = db_path
+        bpy.context.scene.kinora_props.sqlite_file = db_path
         print(f"✓ Set sqlite_file property to: {db_path}")
 
-        if not _operator_exists("jupedsim.load_simulation"):
-            raise RuntimeError("Operator 'jupedsim.load_simulation' not found")
-        print("✓ Operator 'jupedsim.load_simulation' exists")
+        if not _operator_exists("kinora.load_simulation"):
+            raise RuntimeError("Operator 'kinora.load_simulation' not found")
+        print("✓ Operator 'kinora.load_simulation' exists")
 
-        if not _operator_exists("jupedsim.select_file"):
-            raise RuntimeError("Operator 'jupedsim.select_file' not found")
-        print("✓ Operator 'jupedsim.select_file' exists")
+        if not _operator_exists("kinora.select_file"):
+            raise RuntimeError("Operator 'kinora.select_file' not found")
+        print("✓ Operator 'kinora.select_file' exists")
 
-        props = bpy.context.scene.jupedsim_props
+        props = bpy.context.scene.kinora_props
         assert hasattr(props, "sqlite_file"), "Missing 'sqlite_file' property"
         assert hasattr(props, "loading_in_progress"), "Missing 'loading_in_progress' property"
         assert hasattr(props, "frame_step"), "Missing 'frame_step' property"
@@ -251,7 +251,7 @@ def _test_example_file(addon_name, repo_root):
     print("Testing Prepackaged Example File (examples/trajectories.sqlite)")
     print("=" * 72 + "\n")
 
-    example_path = os.path.join(repo_root, "blender_jps", "examples", "trajectories.sqlite")
+    example_path = os.path.join(repo_root, "kinora", "examples", "trajectories.sqlite")
 
     if not os.path.exists(example_path):
         raise RuntimeError(f"Example file not found: {example_path}")
@@ -266,7 +266,7 @@ def _test_example_file(addon_name, repo_root):
         min_frames=1,
     )
 
-    bpy.context.scene.jupedsim_props.sqlite_file = example_path
+    bpy.context.scene.kinora_props.sqlite_file = example_path
     print("✓ Set sqlite_file property to example file")
 
     conn = sqlite3.connect(example_path)
@@ -294,7 +294,7 @@ def _test_hdf5_loading(addon_name, repo_root):
 
     import pathlib
 
-    example_path = pathlib.Path(repo_root) / "blender_jps" / "examples" / "040_l020_g1_rf_h-.h5"
+    example_path = pathlib.Path(repo_root) / "kinora" / "examples" / "040_l020_g1_rf_h-.h5"
     if not example_path.exists():
         raise RuntimeError(f"HDF5 example file not found: {example_path}")
     print(f"✓ Found HDF5 example file: {example_path}")
@@ -302,7 +302,7 @@ def _test_hdf5_loading(addon_name, repo_root):
     file_size = example_path.stat().st_size
     print(f"✓ File size: {file_size:,} bytes ({file_size / 1024:.1f} KB)")
 
-    from blender_jps.io.hdf5_reader import read_simulation_data
+    from kinora.io.hdf5_reader import read_simulation_data
 
     cancel_event = __import__("threading").Event()
     data, timings = read_simulation_data(
@@ -352,15 +352,15 @@ def _test_dependency_installation(addon_name, repo_root):
     print("Testing Dependency Installation System")
     print("=" * 72 + "\n")
 
-    if not _operator_exists("jupedsim.install_dependencies"):
-        raise RuntimeError("Operator 'jupedsim.install_dependencies' not found")
-    print("✓ Operator 'jupedsim.install_dependencies' exists")
+    if not _operator_exists("kinora.install_dependencies"):
+        raise RuntimeError("Operator 'kinora.install_dependencies' not found")
+    print("✓ Operator 'kinora.install_dependencies' exists")
 
-    if not _operator_exists("jupedsim.uninstall_dependencies"):
-        raise RuntimeError("Operator 'jupedsim.uninstall_dependencies' not found")
-    print("✓ Operator 'jupedsim.uninstall_dependencies' exists")
+    if not _operator_exists("kinora.uninstall_dependencies"):
+        raise RuntimeError("Operator 'kinora.uninstall_dependencies' not found")
+    print("✓ Operator 'kinora.uninstall_dependencies' exists")
 
-    addon_dir = os.path.join(repo_root, "blender_jps")
+    addon_dir = os.path.join(repo_root, "kinora")
     deps_dir = os.path.join(addon_dir, "deps")
 
     if not os.path.exists(deps_dir):

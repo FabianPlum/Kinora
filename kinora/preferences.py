@@ -1,5 +1,5 @@
 """
-BlenderJPS Addon Preferences
+Kinora Addon Preferences
 Handles addon preferences and dependency installation.
 """
 
@@ -32,10 +32,10 @@ def _handle_rmtree_error(func, path, exc_info):
         raise exc_info[1] from None
 
 
-class JUPEDSIM_OT_install_dependencies(bpy.types.Operator):
-    """Install required Python packages for BlenderJPS addon."""
+class KINORA_OT_install_dependencies(bpy.types.Operator):
+    """Install required Python packages for Kinora addon."""
 
-    bl_idname = "jupedsim.install_dependencies"
+    bl_idname = "kinora.install_dependencies"
     bl_label = "Install Dependencies"
     bl_description = "Install pedpy and required packages to addon's local directory"
     bl_options = {"REGISTER"}
@@ -65,10 +65,10 @@ class JUPEDSIM_OT_install_dependencies(bpy.types.Operator):
             return {"CANCELLED"}
 
 
-class JUPEDSIM_OT_uninstall_dependencies(bpy.types.Operator):
+class KINORA_OT_uninstall_dependencies(bpy.types.Operator):
     """Remove installed dependencies."""
 
-    bl_idname = "jupedsim.uninstall_dependencies"
+    bl_idname = "kinora.uninstall_dependencies"
     bl_label = "Uninstall Dependencies"
     bl_description = "Remove the local deps folder"
     bl_options = {"REGISTER"}
@@ -127,8 +127,8 @@ class JUPEDSIM_OT_uninstall_dependencies(bpy.types.Operator):
         return {"FINISHED"}
 
 
-class JuPedSimAddonPreferences(AddonPreferences):
-    """Addon preferences for BlenderJPS."""
+class KinoraAddonPreferences(AddonPreferences):
+    """Addon preferences for Kinora."""
 
     bl_idname = __package__
 
@@ -159,7 +159,7 @@ class JuPedSimAddonPreferences(AddonPreferences):
 
             box.separator()
             row = box.row()
-            row.operator("jupedsim.uninstall_dependencies", icon="TRASH")
+            row.operator("kinora.uninstall_dependencies", icon="TRASH")
         else:
             row = box.row()
             row.label(text="pedpy: Not Installed", icon="ERROR")
@@ -171,13 +171,13 @@ class JuPedSimAddonPreferences(AddonPreferences):
 
             row = box.row()
             row.scale_y = 1.5
-            row.operator("jupedsim.install_dependencies", icon="IMPORT")
+            row.operator("kinora.install_dependencies", icon="IMPORT")
 
 
 classes = [
-    JUPEDSIM_OT_install_dependencies,
-    JUPEDSIM_OT_uninstall_dependencies,
-    JuPedSimAddonPreferences,
+    KINORA_OT_install_dependencies,
+    KINORA_OT_uninstall_dependencies,
+    KinoraAddonPreferences,
 ]
 
 

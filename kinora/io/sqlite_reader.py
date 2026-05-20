@@ -1,4 +1,4 @@
-"""SQLite reading and parsing for JuPedSim trajectory files."""
+"""SQLite reading and parsing for pedestrian data trajectory files."""
 
 import sqlite3
 import time

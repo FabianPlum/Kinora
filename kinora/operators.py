@@ -1,6 +1,6 @@
 """
-BlenderJPS Operators
-Operators for loading JuPedSim trajectory and geometry data.
+Kinora Operators
+Operators for loading (JuPedSim) trajectory and geometry data.
 """
 
 import os
@@ -39,12 +39,12 @@ def check_dependencies() -> tuple[bool, str | None]:
     return True, None
 
 
-class JUPEDSIM_OT_select_file(Operator, ImportHelper):
-    """Select a JuPedSim trajectory file (SQLite or HDF5)."""
+class KINORA_OT_select_file(Operator, ImportHelper):
+    """Select a pedestrain data trajectory file (JuPedSim SQLite or HDF5)."""
 
-    bl_idname = "jupedsim.select_file"
+    bl_idname = "kinora.select_file"
     bl_label = "Select Trajectory File"
-    bl_description = "Browse for a JuPedSim trajectory file (SQLite or HDF5)"
+    bl_description = "Browse for a trajectory file (SQLite or HDF5)"
 
     filter_glob: StringProperty(
         default="*.sqlite;*.db;*.h5;*.hdf5",
@@ -53,15 +53,15 @@ class JUPEDSIM_OT_select_file(Operator, ImportHelper):
 
     def execute(self, context):
         """Store the selected trajectory file path in the scene properties."""
-        context.scene.jupedsim_props.sqlite_file = self.filepath
+        context.scene.kinora_props.sqlite_file = self.filepath
         self.report({"INFO"}, f"Selected file: {self.filepath}")
         return {"FINISHED"}
 
 
-class JUPEDSIM_OT_load_simulation(Operator):
+class KINORA_OT_load_simulation(Operator):
     """Load simulation data from the selected trajectory file (SQLite or HDF5)."""
 
-    bl_idname = "jupedsim.load_simulation"
+    bl_idname = "kinora.load_simulation"
     bl_label = "Load Simulation"
     bl_description = "Load agent trajectories and geometry from a SQLite or HDF5 file"
     bl_options = {"REGISTER", "UNDO"}
@@ -101,7 +101,7 @@ class JUPEDSIM_OT_load_simulation(Operator):
             self.report({"ERROR"}, "Please install dependencies in addon preferences.")
             return {"CANCELLED"}
 
-        props = context.scene.jupedsim_props
+        props = context.scene.kinora_props
         if props.loading_in_progress:
             self.report({"WARNING"}, "A load is already in progress")
             return {"CANCELLED"}
@@ -147,7 +147,7 @@ class JUPEDSIM_OT_load_simulation(Operator):
 
     def modal(self, context: Context, event: bpy.types.Event) -> set[str]:
         """Advance loading stages and update progress."""
-        props = context.scene.jupedsim_props
+        props = context.scene.kinora_props
 
         if event.type == "ESC":
             self._cancelled = True
@@ -181,8 +181,8 @@ class JUPEDSIM_OT_load_simulation(Operator):
 
         if self._stage == "create_collections":
             self._timed_start("create_collections")
-            self._agents_collection = geo.get_or_create_collection("JuPedSim_Agents")
-            self._geometry_collection = geo.get_or_create_collection("JuPedSim_Geometry")
+            self._agents_collection = geo.get_or_create_collection("Kinora_Agents")
+            self._geometry_collection = geo.get_or_create_collection("Kinora_Geometry")
             self._timed_end("create_collections")
             props.loading_message = "Preparing scene..."
             props.loading_progress = 10.0
@@ -305,7 +305,7 @@ class JUPEDSIM_OT_load_simulation(Operator):
     def _finish_success(self, context: Context) -> set[str]:
         """Finalize a successful load."""
         self._cleanup_timer(context)
-        props = context.scene.jupedsim_props
+        props = context.scene.kinora_props
         props.loading_in_progress = False
         return {"FINISHED"}
 
@@ -314,7 +314,7 @@ class JUPEDSIM_OT_load_simulation(Operator):
         self._cleanup_timer(context)
         self._finalize_timings_on_cancel()
         self._log_timings()
-        props = context.scene.jupedsim_props
+        props = context.scene.kinora_props
         props.loading_in_progress = False
         props.loading_message = "Load cancelled (partial data kept)"
         return {"CANCELLED"}
@@ -333,7 +333,7 @@ class JUPEDSIM_OT_load_simulation(Operator):
         for key, value in list(self._timings.items()):
             if value < 0:
                 self._timings[key] = time.perf_counter() + value
-                print(f"[BlenderJPS] {key} took {self._timings[key]:.3f}s (cancelled)")
+                print(f"[Kinora] {key} took {self._timings[key]:.3f}s (cancelled)")
 
     def _run_reader_worker(
         self,
@@ -366,7 +366,7 @@ class JUPEDSIM_OT_load_simulation(Operator):
         self._max_frame = self._worker_data["max_frame"]
         self._sampled_frames = set()
         self._path_groups = self._worker_data.get("path_groups")
-        context.scene.jupedsim_props.loaded_agent_count = self._total_agents
+        context.scene.kinora_props.loaded_agent_count = self._total_agents
         step = self._frame_step
         if step > 1:
             context.scene.frame_start = 1
@@ -397,7 +397,7 @@ class JUPEDSIM_OT_load_simulation(Operator):
             geo.create_agent(context, agent_id, self._agents_collection, self._materials)
         self._agent_index = end
         progress = 25.0 + (self._agent_index / max(1, self._total_agents)) * 45.0
-        context.scene.jupedsim_props.loading_progress = min(progress, 70.0)
+        context.scene.kinora_props.loading_progress = min(progress, 70.0)
         if self._agent_index >= self._total_agents:
             return True
         return False
@@ -416,7 +416,7 @@ class JUPEDSIM_OT_load_simulation(Operator):
             geo.create_agent_path(context, agent_id, coords, self._agents_collection)
         self._path_index = end
         progress = 70.0 + (self._path_index / max(1, len(self._path_groups))) * 25.0
-        context.scene.jupedsim_props.loading_progress = min(progress, 95.0)
+        context.scene.kinora_props.loading_progress = min(progress, 95.0)
         if self._path_index >= len(self._path_groups):
             return True
         return False
@@ -431,13 +431,13 @@ class JUPEDSIM_OT_load_simulation(Operator):
         assert self._timings is not None
         if name in self._timings:
             self._timings[name] = time.perf_counter() + self._timings[name]
-            print(f"[BlenderJPS] {name} took {self._timings[name]:.3f}s")
+            print(f"[Kinora] {name} took {self._timings[name]:.3f}s")
 
     def _log_timings(self) -> None:
         """Print the timing summary."""
         if self._timings is None:
             return
-        print("[BlenderJPS] Timing summary:")
+        print("[Kinora] Timing summary:")
         for key, value in self._timings.items():
             print(f"  - {key}: {value:.3f}s")
 
@@ -449,8 +449,8 @@ class JUPEDSIM_OT_load_simulation(Operator):
 
 
 classes = [
-    JUPEDSIM_OT_select_file,
-    JUPEDSIM_OT_load_simulation,
+    KINORA_OT_select_file,
+    KINORA_OT_load_simulation,
 ]
 
 

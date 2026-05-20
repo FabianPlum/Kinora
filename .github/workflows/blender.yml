@@ -7,16 +7,16 @@ on:
 jobs:
   addon-smoke-test:
     runs-on: ubuntu-latest
-    
+
     env:
-      ADDON_MODULE: "blender_jps"
+      ADDON_MODULE: "kinora"
       BLENDER_VERSION: "5.0.1"
       BLENDER_MAJOR_DIR: "Blender5.0"
-      
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      
+
       - name: Install system dependencies (headless)
         run: |
           set -euxo pipefail
@@ -31,43 +31,43 @@ jobs:
           set -euxo pipefail
           TARBALL="blender-${BLENDER_VERSION}-linux-x64.tar.xz"
           URL="https://download.blender.org/release/${BLENDER_MAJOR_DIR}/${TARBALL}"
-          
+
           echo "Downloading from: $URL"
           curl -fL "$URL" -o "$TARBALL"
           tar -xf "$TARBALL"
-          
+
           BLENDER_DIR="blender-${BLENDER_VERSION}-linux-x64"
           echo "BLENDER_BIN=${GITHUB_WORKSPACE}/${BLENDER_DIR}/blender" >> "$GITHUB_ENV"
-          
-          "${GITHUB_WORKSPACE}/${BLENDER_DIR}/blender" --version      
-      
+
+          "${GITHUB_WORKSPACE}/${BLENDER_DIR}/blender" --version
+
       - name: Install dependencies
         shell: bash
         run: |
           set -euxo pipefail
-          
+
           # Use the addon's own install_utils module
           cat > /tmp/install_deps.py <<'PY'
           import os
           import sys
-          
-          addon_dir = os.path.join(os.environ['GITHUB_WORKSPACE'], 'blender_jps')
+
+          addon_dir = os.path.join(os.environ['GITHUB_WORKSPACE'], 'kinora')
           if addon_dir not in sys.path:
               sys.path.insert(0, os.path.dirname(addon_dir))
-          
-          from blender_jps import install_utils
-          
+
+          from kinora import install_utils
+
           print("=" * 60)
           print(f"Blender Python: {sys.executable}")
           print(f"Python version: {sys.version}")
           print(f"Addon directory: {addon_dir}")
           print("=" * 60)
-          
+
           success, message = install_utils.install_dependencies(addon_dir)
-          
+
           if success:
               print(f"\n✓ {message}")
-              
+
               install_utils.ensure_deps_in_path(addon_dir)
               if install_utils.is_pedpy_installed(addon_dir):
                   import pedpy
@@ -79,33 +79,33 @@ jobs:
               print(f"\n✗ {message}")
               sys.exit(1)
           PY
-          
+
           "$BLENDER_BIN" --background --python /tmp/install_deps.py
-      
+
       - name: Verify installation matches addon expectations
         shell: bash
         run: |
           set -euxo pipefail
-          
-          DEPS_DIR="${GITHUB_WORKSPACE}/blender_jps/deps"
-          
+
+          DEPS_DIR="${GITHUB_WORKSPACE}/kinora/deps"
+
           if [ ! -d "$DEPS_DIR" ]; then
             echo "✗ deps directory not found at: $DEPS_DIR"
             exit 1
           fi
-          
+
           echo "✓ deps directory exists at: $DEPS_DIR"
-          
+
           if [ ! -d "$DEPS_DIR/pedpy" ]; then
             echo "✗ pedpy package not found in deps directory"
             exit 1
           fi
-          
+
           echo "✓ pedpy package found in deps directory"
           echo ""
           echo "Contents of deps directory:"
           ls -la "$DEPS_DIR"
-      
+
       - name: Run add-on loading test with SQLite
         shell: bash
         run: |
@@ -113,16 +113,16 @@ jobs:
           "$BLENDER_BIN" \
             --background \
             --factory-startup \
-            --python blender_jps/tests/test_plugin_loading.py \
+            --python kinora/tests/test_plugin_loading.py \
             -- \
             --addon "${ADDON_MODULE}" \
             --factory-startup \
             --require-module pedpy \
             --require-module shapely \
-            --require-operator jupedsim.load_simulation \
-            --require-operator jupedsim.select_file \
+            --require-operator kinora.load_simulation \
+            --require-operator kinora.select_file \
             --test-dependency-installation \
             --test-sqlite-loading \
             --test-hdf5-loading \
             --test-example-file
-      
+
