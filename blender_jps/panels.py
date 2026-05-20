@@ -8,7 +8,8 @@ import os
 import bpy
 from bpy.types import Context, Panel
 
-from .install_utils import is_pedpy_installed
+from .core import navmesh as nav
+from .install_utils import is_jupedsim_installed, is_pedpy_installed
 
 ADDON_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -145,9 +146,47 @@ class JUPEDSIM_PT_info_panel(Panel):
         box.label(text=f"Frame range: {context.scene.frame_start} - {context.scene.frame_end}")
 
 
+class JUPEDSIM_PT_navmesh_panel(Panel):
+    """Routing-engine debug visualization (triangulation + path queries)."""
+
+    bl_label = "Navigation Debug"
+    bl_idname = "JUPEDSIM_PT_navmesh_panel"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "JuPedSim"
+    bl_options = {"DEFAULT_CLOSED"}
+
+    def draw(self, context: Context) -> None:
+        layout = self.layout
+        props = context.scene.jupedsim_props
+
+        if not is_jupedsim_installed(ADDON_DIR):
+            box = layout.box()
+            box.alert = True
+            box.label(text="jupedsim not installed", icon="ERROR")
+            box.label(text="Re-run 'Install Dependencies' in")
+            box.label(text="addon preferences to enable this.")
+            return
+
+        levels = nav.available_levels()
+        if not levels:
+            layout.label(text="Load a simulation first.", icon="INFO")
+            return
+
+        if len(levels) > 1:
+            layout.prop(props, "route_level", text="Level")
+        row = layout.row()
+        row.scale_y = 1.3
+        row.operator(
+            "jupedsim.pick_route", text="Pick Route (LMB-drag)", icon="RESTRICT_SELECT_OFF"
+        )
+        layout.operator("jupedsim.clear_routes", text="Clear Routes", icon="X")
+
+
 classes = [
     JUPEDSIM_PT_main_panel,
     JUPEDSIM_PT_info_panel,
+    JUPEDSIM_PT_navmesh_panel,
 ]
 
 

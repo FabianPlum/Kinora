@@ -49,6 +49,7 @@ def install_dependencies(addon_dir, timeout=300):
                 "--upgrade",
                 "--no-user",
                 "pedpy",
+                "jupedsim<2.0",
                 "numpy<2.0",
             ],
             timeout=timeout,
@@ -75,6 +76,17 @@ def is_pedpy_installed(addon_dir):
 
     ensure_deps_in_path(addon_dir)
     return importlib.util.find_spec("pedpy") is not None
+
+
+def is_jupedsim_installed(addon_dir):
+    """Check if jupedsim is installed and importable.
+
+    Optional: required only for the navmesh / router debug feature.
+    """
+    import importlib.util
+
+    ensure_deps_in_path(addon_dir)
+    return importlib.util.find_spec("jupedsim") is not None
 
 
 def dependencies_installed(addon_dir):

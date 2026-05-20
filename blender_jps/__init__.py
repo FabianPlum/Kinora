@@ -36,6 +36,17 @@ from bpy.types import PropertyGroup
 
 # Import submodules
 from . import operators, panels, preferences
+from .core import navmesh as _navmesh
+
+
+@bpy.app.handlers.persistent
+def _on_load_post(_dummy):
+    """Drop the navmesh routing-engine cache when a new .blend is opened.
+
+    Without this the module-level cache would happily serve engines
+    built against the previous file's geometry.
+    """
+    _navmesh.clear_engines()
 
 
 def update_path_visibility(self, context):
@@ -160,6 +171,13 @@ class JuPedSimProperties(PropertyGroup):
         options={"HIDDEN"},
     )
 
+    route_level: IntProperty(
+        name="Route Level",
+        description="Level id whose RoutingEngine to query",
+        default=0,
+        min=0,
+    )
+
 
 # List of classes to register
 classes = [
@@ -181,11 +199,17 @@ def register():
     # Add properties to scene
     bpy.types.Scene.jupedsim_props = PointerProperty(type=JuPedSimProperties)
 
+    if _on_load_post not in bpy.app.handlers.load_post:
+        bpy.app.handlers.load_post.append(_on_load_post)
+
     print("BlenderJPS addon registered successfully")
 
 
 def unregister():
     """Unregister the addon."""
+    if _on_load_post in bpy.app.handlers.load_post:
+        bpy.app.handlers.load_post.remove(_on_load_post)
+
     # Remove properties from scene
     del bpy.types.Scene.jupedsim_props
 

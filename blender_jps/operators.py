@@ -18,6 +18,7 @@ from bpy_extras.io_utils import ImportHelper
 
 from . import install_utils
 from .core import geometry as geo
+from .core import navmesh as nav
 from .core.streaming import clear_stream_state, start_streaming
 from .io.hdf5_reader import read_simulation_data as read_hdf5_data
 from .io.sqlite_reader import read_simulation_data as read_sqlite_data
@@ -191,6 +192,13 @@ class JUPEDSIM_OT_load_simulation(Operator):
         if self._stage == "create_geometry":
             assert self._worker_data is not None
             self._timed_start("create_geometry")
+            # Explicit None-check: an empty levels list (legitimate v3
+            # "no floors" case) is different from the legacy single-
+            # floor geometry path. Don't let a truthy-or-fallback hide it.
+            if self._worker_data.get("levels") is not None:
+                geometry_arg = self._worker_data["levels"]
+            else:
+                geometry_arg = self._worker_data["geometry"]
             num_curves = geo.create_geometry(
                 context,
                 self._worker_data["geometry"],
@@ -201,6 +209,18 @@ class JUPEDSIM_OT_load_simulation(Operator):
             self.report({"INFO"}, f"Created geometry with {num_curves} boundary curves")
             props.loading_message = "Creating geometry..."
             props.loading_progress = 25.0
+            self._timed_start("build_navmesh")
+            nav_levels = nav.normalize_levels_arg(geometry_arg)
+            engines = nav.build_routing_engines(nav_levels)
+            if engines:
+                navmesh_collection = _get_or_link_collection(context, nav.NAVMESH_COLLECTION)
+                nav.clear_navmesh_objects(navmesh_collection)
+                nav.create_navmesh_objects(nav_levels, navmesh_collection, self._materials)
+            self._timed_end("build_navmesh")
+            if engines:
+                self.report({"INFO"}, f"Built routing engines for {len(engines)} level(s)")
+            elif not install_utils.is_jupedsim_installed(ADDON_DIR):
+                self.report({"INFO"}, "jupedsim not installed — navmesh / route picker disabled")
             self._stage = "create_big_data" if self._big_data_mode else "create_agents"
 
         if self._stage == "create_agents":
@@ -265,6 +285,7 @@ class JUPEDSIM_OT_load_simulation(Operator):
                     frame_data=self._worker_data.get("frame_data"),
                 )
             context.scene.frame_set(context.scene.frame_start)
+            _switch_to_top_view(context)
             self._timed_end("finalize")
             props.loading_progress = 100.0
             props.loading_message = "Load complete"
@@ -301,6 +322,11 @@ class JUPEDSIM_OT_load_simulation(Operator):
         self._path_groups = None
         self._materials = {}
         clear_stream_state()
+        nav.clear_engines()
+        # Stale routes from a prior load reference coords that may no
+        # longer match the new geometry.
+        if nav.ROUTE_COLLECTION in bpy.data.collections:
+            nav.clear_routes(bpy.data.collections[nav.ROUTE_COLLECTION])
 
     def _finish_success(self, context: Context) -> set[str]:
         """Finalize a successful load."""
@@ -448,9 +474,203 @@ class JUPEDSIM_OT_load_simulation(Operator):
             print(trace)
 
 
+class JUPEDSIM_OT_clear_routes(Operator):
+    """Remove all previously computed route curves."""
+
+    bl_idname = "jupedsim.clear_routes"
+    bl_label = "Clear Routes"
+    bl_description = "Remove all Route_* objects"
+
+    def execute(self, context: Context) -> set[str]:
+        if nav.ROUTE_COLLECTION not in bpy.data.collections:
+            return {"FINISHED"}
+        collection = bpy.data.collections[nav.ROUTE_COLLECTION]
+        n = nav.clear_routes(collection)
+        self.report({"INFO"}, f"Cleared {n} route object(s)")
+        return {"FINISHED"}
+
+
+class JUPEDSIM_OT_pick_route(Operator):
+    """Click-and-drag in the viewport to interactively query the router."""
+
+    bl_idname = "jupedsim.pick_route"
+    bl_label = "Pick Route"
+    bl_description = (
+        "Press to start, then LMB-drag in the viewport to query the routing engine "
+        "live. Release to finalize, ESC/RMB to cancel."
+    )
+
+    _level_id: int = 0
+    _z: float = 0.0
+    _from_xy: tuple[float, float] | None = None
+    _from_routable: bool = False
+    _last_length: float | None = None
+    _collection: bpy.types.Collection | None = None
+    _materials: dict | None = None
+
+    @classmethod
+    def poll(cls, context):
+        return context.area is not None and context.area.type == "VIEW_3D"
+
+    def invoke(self, context: Context, event: bpy.types.Event) -> set[str]:
+        if not nav.available_levels():
+            self.report({"ERROR"}, "No routing engines built. Load a simulation first.")
+            return {"CANCELLED"}
+        props = context.scene.jupedsim_props
+        level_id = int(props.route_level)
+        if level_id not in nav.available_levels():
+            level_id = nav.available_levels()[0]
+        self._level_id = level_id
+        self._z = _level_z_lookup(level_id)
+        self._from_xy = None
+        self._from_routable = False
+        self._last_length = None
+        self._materials = {}
+        self._collection = _get_or_link_collection(context, nav.ROUTE_COLLECTION)
+        nav.remove_live_route()
+        context.workspace.status_text_set(
+            "Route picker: LMB to set From, drag to query, release to finalize, ESC/RMB to cancel"
+        )
+        context.window_manager.modal_handler_add(self)
+        return {"RUNNING_MODAL"}
+
+    def modal(self, context: Context, event: bpy.types.Event) -> set[str]:
+        if event.type in {"ESC", "RIGHTMOUSE"} and event.value == "PRESS":
+            return self._end(context, cancel=True)
+
+        # Only act on mouse events that originated in a 3D viewport.
+        # Without this guard, an LMB press in the outliner / properties
+        # panel would feed a non-VIEW_3D RegionView3D into the screen-to-
+        # world projection and yield a junk pick.
+        in_view3d = context.area is not None and context.area.type == "VIEW_3D"
+
+        if event.type == "LEFTMOUSE" and event.value == "PRESS":
+            if not in_view3d:
+                return {"PASS_THROUGH"}
+            xy = self._screen_to_world(context, event)
+            if xy is None:
+                return {"RUNNING_MODAL"}
+            self._from_xy = xy
+            self._from_routable = nav.is_routable(self._level_id, xy)
+            return {"RUNNING_MODAL"}
+
+        if event.type == "MOUSEMOVE" and self._from_xy is not None:
+            if not in_view3d:
+                return {"PASS_THROUGH"}
+            xy = self._screen_to_world(context, event)
+            if xy is None:
+                return {"RUNNING_MODAL"}
+            length, err = nav.update_live_route(
+                self._level_id,
+                self._from_xy,
+                xy,
+                self._z,
+                self._collection,
+                self._materials,
+                from_routable=self._from_routable,
+            )
+            self._last_length = length
+            msg = (
+                f"Route length: {length:.2f} m" if length is not None else "(out of walkable area)"
+            )
+            if err:
+                msg = err
+            context.workspace.status_text_set(f"Route picker — {msg}")
+            return {"RUNNING_MODAL"}
+
+        if event.type == "LEFTMOUSE" and event.value == "RELEASE":
+            if not in_view3d:
+                return {"PASS_THROUGH"}
+            return self._end(context, cancel=False)
+
+        return {"PASS_THROUGH"}
+
+    def _end(self, context: Context, cancel: bool) -> set[str]:
+        context.workspace.status_text_set(None)
+        if cancel:
+            nav.remove_live_route()
+            return {"CANCELLED"}
+        if self._collection is not None:
+            nav.commit_live_route(self._level_id, self._collection)
+        return {"FINISHED"}
+
+    def _screen_to_world(self, context: Context, event: bpy.types.Event):
+        from bpy_extras import view3d_utils
+        from mathutils import Vector
+        from mathutils.geometry import intersect_line_plane
+
+        region = context.region
+        rv3d = context.region_data
+        if region is None or rv3d is None:
+            return None
+        coord = (event.mouse_region_x, event.mouse_region_y)
+        origin = view3d_utils.region_2d_to_origin_3d(region, rv3d, coord)
+        direction = view3d_utils.region_2d_to_vector_3d(region, rv3d, coord)
+        hit = intersect_line_plane(
+            origin,
+            origin + direction * 10000.0,
+            Vector((0.0, 0.0, self._z)),
+            Vector((0.0, 0.0, 1.0)),
+        )
+        if hit is None:
+            return None
+        return (float(hit.x), float(hit.y))
+
+
+def _switch_to_top_view(context: Context) -> None:
+    """Set the *active* 3D viewport to top-orthographic and frame it.
+
+    Matches jupedsim_visualizer's default — when you load a trajectory
+    you almost always want the floor plan, not the user's prior camera.
+    Only touches the area the load was invoked from so multi-viewport
+    workspaces (e.g. perspective camera + floor plan) survive intact.
+    """
+    area = context.area
+    if area is None or area.type != "VIEW_3D":
+        area = next(
+            (a for a in context.screen.areas if a.type == "VIEW_3D"),
+            None,
+        )
+    if area is None:
+        return
+    region = next((r for r in area.regions if r.type == "WINDOW"), None)
+    if region is None:
+        return
+    with context.temp_override(window=context.window, area=area, region=region):
+        bpy.ops.view3d.view_axis(type="TOP")
+        bpy.ops.view3d.view_all()
+
+
+def _get_or_link_collection(context: Context, name: str) -> bpy.types.Collection:
+    """Return an existing collection (don't clear it) or link a new one.
+
+    Unlike :func:`geometry.get_or_create_collection`, this preserves the
+    contents — important when the navmesh/routes share the same
+    collection as the floor slabs and obstacles.
+    """
+    coll = bpy.data.collections.get(name)
+    if coll is not None:
+        return coll
+    coll = bpy.data.collections.new(name)
+    context.scene.collection.children.link(coll)
+    return coll
+
+
+def _level_z_lookup(level_id: int) -> float:
+    """Return the z the navmesh was built at for ``level_id``.
+
+    Reading from the engine cache (rather than re-deriving from slab
+    object locations) keeps the picking plane and the navmesh wireframe
+    aligned even if someone moves a slab object after load.
+    """
+    return nav.level_z(level_id)
+
+
 classes = [
     JUPEDSIM_OT_select_file,
     JUPEDSIM_OT_load_simulation,
+    JUPEDSIM_OT_clear_routes,
+    JUPEDSIM_OT_pick_route,
 ]
 
 
