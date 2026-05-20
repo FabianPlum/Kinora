@@ -149,6 +149,21 @@ Create a symbolic link to your `blender_jps` folder in your Blender addons direc
 5. Go to **Edit → Preferences → Add-ons**
 6. Search for "JuPedSim" and enable the addon
 
+### Pre-commit Hooks
+
+CI runs `ruff check` and `ruff format --check`. To catch these locally before pushing:
+
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+Hooks then run on every `git commit`. To check the whole repo on demand:
+
+```bash
+pre-commit run --all-files
+```
+
 ## License
 
 MIT License

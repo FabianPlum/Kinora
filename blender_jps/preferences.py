@@ -5,7 +5,9 @@ Handles addon preferences and dependency installation.
 
 import os
 import shutil
+import stat
 import sys
+import time
 
 import bpy
 from bpy.types import AddonPreferences
@@ -13,6 +15,21 @@ from bpy.types import AddonPreferences
 from . import install_utils
 
 ADDON_DIR = os.path.dirname(os.path.realpath(__file__))
+
+
+def _handle_rmtree_error(func, path, exc_info):
+    """rmtree onerror handler that clears the read-only bit on Windows.
+
+    Re-raises non-permission errors so the real blocker surfaces instead of a
+    misleading chmod failure.
+    """
+    if sys.platform != "win32" or not isinstance(exc_info[1], PermissionError):
+        raise exc_info[1]
+    try:
+        os.chmod(path, stat.S_IWRITE)
+        func(path)
+    except OSError:
+        raise exc_info[1] from None
 
 
 class JUPEDSIM_OT_install_dependencies(bpy.types.Operator):
@@ -59,19 +76,54 @@ class JUPEDSIM_OT_uninstall_dependencies(bpy.types.Operator):
     def execute(self, context):
         deps_dir = install_utils.get_deps_dir(ADDON_DIR)
 
-        if os.path.exists(deps_dir):
-            try:
-                if deps_dir in sys.path:
-                    sys.path.remove(deps_dir)
+        if not os.path.exists(deps_dir):
+            self.report({"INFO"}, "No dependencies to uninstall.")
+            return {"FINISHED"}
 
-                shutil.rmtree(deps_dir)
-                self.report({"INFO"}, "Dependencies uninstalled successfully.")
-            except Exception as e:
+        if deps_dir in sys.path:
+            sys.path.remove(deps_dir)
+
+        # Drop pure-Python modules loaded from deps so their source files can
+        # be removed. Compiled extensions (.pyd/.dll) generally stay mapped
+        # for the lifetime of the Blender process even after sys.modules
+        # eviction, so a Blender restart may still be needed before those
+        # file handles are released.
+        deps_prefix = os.path.normcase(deps_dir + os.sep)
+        to_remove = [
+            name
+            for name, mod in sys.modules.items()
+            if getattr(mod, "__file__", None)
+            and os.path.normcase(mod.__file__).startswith(deps_prefix)
+        ]
+        for name in to_remove:
+            del sys.modules[name]
+
+        try:
+            shutil.rmtree(deps_dir, onerror=_handle_rmtree_error)
+        except Exception as e:
+            if sys.platform != "win32":
                 self.report({"ERROR"}, f"Failed to remove deps folder: {e}")
                 return {"CANCELLED"}
-        else:
-            self.report({"INFO"}, "No dependencies to uninstall.")
+            # Windows fallback: a still-loaded .pyd/.dll likely holds a lock.
+            # Move the deps dir aside so a fresh install can proceed; the
+            # leftover can be deleted after restarting Blender.
+            leftover = f"{deps_dir}.deleted-{int(time.time())}"
+            try:
+                os.rename(deps_dir, leftover)
+            except OSError:
+                self.report({"ERROR"}, f"Failed to remove deps folder: {e}")
+                return {"CANCELLED"}
+            self.report(
+                {"WARNING"},
+                (
+                    f"Some files were locked and could not be deleted. "
+                    f"Moved deps to '{leftover}'. Restart Blender and "
+                    f"delete that folder to reclaim the disk space."
+                ),
+            )
+            return {"FINISHED"}
 
+        self.report({"INFO"}, "Dependencies uninstalled successfully.")
         return {"FINISHED"}
 
 

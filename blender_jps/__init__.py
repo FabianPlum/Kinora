@@ -13,8 +13,8 @@ install_utils.ensure_deps_in_path(ADDON_DIR)
 
 bl_info = {
     "name": "BlenderJPS - JuPedSim Importer",
-    "author": "Fabian Plum",
-    "version": (0, 1, 5),
+    "author": "Fabian Plum & Mohcine Chraibi",
+    "version": (0, 1, 6),
     "blender": (4, 0, 0),
     "location": "View3D > Sidebar > JuPedSim",
     "description": "Import JuPedSim trajectory files (SQLite and HDF5) with agent animations and geometry",
