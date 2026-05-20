@@ -26,8 +26,8 @@ A Blender addon for importing JuPedSim simulation SQLite files, visualizing agen
 
 - **Blender 4.0+** (Blender 3.x is not supported)
   - Development and testing on Blender 5.0
-  - Should work on Blender 4.0+ but not actively tested
-- **Python packages**: `pedpy`, `numpy<2.0` (installed automatically via addon)
+  - Should work on Blender 4.0+ and 5.1+ but not actively tested
+- **Python packages**: `pedpy` and its transitive deps (installed automatically via addon)
 
 > **Note:** `pedpy` is kept mainly for legacy compatibility and because we currently rely on its `shapely` dependency for geometry processing. SQLite reading is now handled via a streaming approach inspired by the [JuPedSim visualizer's reader](https://github.com/PedestrianDynamics/jupedsim/tree/master/python_modules/jupedsim_visualizer/jupedsim_visualizer).
 
