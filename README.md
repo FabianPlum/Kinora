@@ -1,7 +1,7 @@
 [![Lint](https://github.com/FabianPlum/Kinora/actions/workflows/lint.yml/badge.svg)](https://github.com/FabianPlum/Kinora/actions/workflows/lint.yml) [![Blender Addon CI](https://github.com/FabianPlum/Kinora/actions/workflows/blender.yml/badge.svg)](https://github.com/FabianPlum/Kinora/actions/workflows/blender.yml)
 
-![Kinora](images/kinora-logo-dark.svg#gh-dark-mode-only)
-![Kinora](images/kinora-logo-light.svg#gh-light-mode-only)
+<img src="images/kinora-logo-dark.svg#gh-dark-mode-only" height="120" alt="Kinora">
+<img src="images/kinora-logo-light.svg#gh-light-mode-only" height="120" alt="Kinora">
 
 
 ### A Blender Add-on for visualising pedestrian simulation and experimental trajectory data.
