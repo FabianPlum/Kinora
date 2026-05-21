@@ -90,14 +90,14 @@
      inkscape:pagecheckerboard="0"
      inkscape:deskcolor="#505050"
      inkscape:zoom="9.9675676"
-     inkscape:cx="87.584056"
+     inkscape:cx="87.533893"
      inkscape:cy="40.882592"
      inkscape:window-width="3840"
      inkscape:window-height="2054"
      inkscape:window-x="2149"
      inkscape:window-y="943"
      inkscape:window-maximized="1"
-     inkscape:current-layer="g4-8" />
+     inkscape:current-layer="svg8" />
   <style
      id="style1">
     .kn-text       { fill: #1f2328; }
@@ -121,12 +121,12 @@
      cy="33.316208"
      rx="9.0713749"
      ry="10.560706" />
-  <text
-     x="-1.520658"
-     y="41.78249"
+  <path
+     d="M 19.819691,41.78249 H 12.563972 L 8.8333631,33.625734 6.6044822,36.803075 V 41.78249 H 0.36045422 V 20.205026 H 6.6044822 v 8.915523 l 5.9594898,-8.915523 h 5.943683 L 13.05401,28.093051 Z M 32.974461,20.205026 V 41.78249 H 26.351049 V 20.205026 Z M 59.945131,41.78249 H 54.554717 L 48.64265,32.250467 q -1.138152,-1.833689 -2.292112,-4.457762 0.521653,2.086612 0.521653,3.540918 V 41.78249 H 41.497585 V 20.205026 h 6.259836 l 5.026837,7.903833 q 1.501729,2.355342 2.276304,4.141608 -0.505845,-2.766341 -0.505845,-5.659144 v -6.386297 h 5.390414 z"
+     id="text1-4"
+     style="font-size:32.3741px;font-family:'Franklin Gothic Heavy', 'Arial Black', sans-serif;letter-spacing:4.7609px;fill:#ffffff;stroke-width:0.899697"
      class="kn-text"
-     style="font-style:normal;font-weight:normal;font-stretch:normal;font-size:32.3741px;font-family:'Franklin Gothic Heavy', 'Arial Black', sans-serif;letter-spacing:4.7609px;text-anchor:start;fill:#ffffff;fill-opacity:1;stroke-width:0.899697"
-     id="text1-4">KIN</text>
+     aria-label="KIN" />
   <g
      class="kn-stroke"
      fill="none"

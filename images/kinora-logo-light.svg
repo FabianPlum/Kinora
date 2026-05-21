@@ -50,8 +50,8 @@
      inkscape:pagecheckerboard="0"
      inkscape:deskcolor="#505050"
      inkscape:zoom="14.096269"
-     inkscape:cx="82.57504"
-     inkscape:cy="38.414419"
+     inkscape:cx="82.539571"
+     inkscape:cy="38.41442"
      inkscape:window-width="3840"
      inkscape:window-height="2054"
      inkscape:window-x="2149"
@@ -78,12 +78,12 @@
      cy="33.566849"
      rx="9.3487673"
      ry="10.883639" />
-  <text
-     x="-1.3783008"
-     y="42.292019"
+  <path
+     d="M 20.614569,42.292019 H 13.136993 L 9.2923139,33.885855 6.9952808,37.160349 v 5.13167 H 0.56032998 V 20.054784 H 6.9952808 v 9.188132 l 6.1417122,-9.188132 h 6.125422 L 13.642015,28.184 Z M 34.171578,20.054784 V 42.292019 H 27.345643 V 20.054784 Z m 27.795355,22.237235 h -5.555236 l -6.092839,-9.823482 q -1.172953,-1.889758 -2.362197,-4.594066 0.537603,2.150414 0.537603,3.649187 V 42.292019 H 42.955319 V 20.054784 h 6.451242 l 5.180543,8.145507 q 1.547646,2.427361 2.345906,4.268246 -0.521313,-2.850928 -0.521313,-5.832183 v -6.58157 h 5.555236 z"
+     id="text1"
+     style="font-size:33.364px;font-family:'Franklin Gothic Heavy', 'Arial Black', sans-serif;letter-spacing:4.90648px;fill:#1f2328;stroke-width:0.927209"
      class="kn-text"
-     style="font-style:normal;font-weight:normal;font-stretch:normal;font-size:33.364px;font-family:'Franklin Gothic Heavy', 'Arial Black', sans-serif;letter-spacing:4.90648px;text-anchor:start;stroke-width:0.927209"
-     id="text1">KIN</text>
+     aria-label="KIN" />
   <!-- Viewport brackets framing the Blender mark (the "lens" of the viewer) -->
   <g
      class="kn-stroke"
