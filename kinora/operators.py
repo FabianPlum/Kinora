@@ -268,16 +268,26 @@ class KINORA_OT_load_simulation(Operator):
                     frame_data=self._worker_data.get("frame_data"),
                     color_frame_data=self._worker_data.get("color_frame_data"),
                 )
-            if props.show_image_overlay or props.show_agent_colors:
-                from .core import overlay
+            from .core import voronoi
+
+            voronoi.set_frame_data(self._worker_data.get("polygon_frame_data"))
+            if (
+                props.show_image_overlay
+                or props.show_agent_colors
+                or props.show_path_colors
+                or props.show_voronoi
+            ):
+                from .core import agent_colors, overlay, path_colors
 
                 if props.show_image_overlay:
                     overlay.refresh(context)
                 if props.show_agent_colors:
-                    from .core import agent_colors
-
                     agent_colors.refresh(context)
-                # Both effects are emission materials only visible in Material
+                if props.show_path_colors:
+                    path_colors.refresh(context)
+                if props.show_voronoi:
+                    voronoi.refresh(context)
+                # All four are emission materials only visible in Material
                 # Preview / Rendered, so switch any Solid/Wireframe viewports once.
                 overlay.ensure_material_preview(context)
             context.scene.frame_set(context.scene.frame_start)
@@ -317,9 +327,10 @@ class KINORA_OT_load_simulation(Operator):
         self._path_groups = None
         self._materials = {}
         clear_stream_state()
-        from .core import overlay
+        from .core import overlay, voronoi
 
         overlay.clear_animation()
+        voronoi.clear()
         # Start each load from a clean slate: remove all prior Kinora artefacts.
         geo.clear_all_kinora_artefacts()
 
@@ -440,7 +451,7 @@ class KINORA_OT_load_simulation(Operator):
         return False
 
     def _step_create_paths(self, context: Context) -> bool:
-        """Create a batch of agent path curves per tick."""
+        """Create a batch of agent path ribbons per tick."""
         if not self._path_groups:
             return True
         if self._path_index == 0:
@@ -449,8 +460,10 @@ class KINORA_OT_load_simulation(Operator):
         start = self._path_index
         end = min(len(self._path_groups), start + chunk_size)
         for idx in range(start, end):
-            agent_id, coords = self._path_groups[idx]
-            geo.create_agent_path(context, agent_id, coords, self._agents_collection)
+            agent_id, coords, values = self._path_groups[idx]
+            geo.create_agent_path(
+                context, agent_id, coords, values, self._agents_collection, self._materials
+            )
         self._path_index = end
         progress = 70.0 + (self._path_index / max(1, len(self._path_groups))) * 25.0
         context.scene.kinora_props.loading_progress = min(progress, 95.0)
@@ -498,8 +511,9 @@ def register() -> None:
 
 def unregister() -> None:
     clear_stream_state()
-    from .core import overlay
+    from .core import overlay, voronoi
 
     overlay.clear_animation()
+    voronoi.clear()
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
