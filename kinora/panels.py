@@ -142,6 +142,8 @@ class KINORA_PT_advanced_vis_panel(Panel):
         col = box.column()
         col.enabled = props.show_image_overlay
         col.prop(props, "image_overlay_source", text="Source")
+        col.prop(props, "image_overlay_colormap", text="Colour")
+        col.prop(props, "image_overlay_interpolation", text="Interp")
 
 
 class KINORA_PT_info_panel(Panel):
