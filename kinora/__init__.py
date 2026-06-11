@@ -3,6 +3,7 @@
 A Blender addon for visualising pedestrian data trajectory files (JuPedSim SQLite and HDF5).
 """
 
+import json
 import os
 
 from . import install_utils
@@ -27,6 +28,7 @@ bl_info = {
 import bpy
 from bpy.props import (
     BoolProperty,
+    EnumProperty,
     FloatProperty,
     IntProperty,
     PointerProperty,
@@ -70,6 +72,48 @@ def update_geometry_thickness(self, context):
     for obj in collection.objects:
         if obj.type == "CURVE":
             obj.data.bevel_depth = self.geometry_thickness
+
+
+def parse_advanced_vis_manifest(props):
+    """Return the parsed advanced-visualisation manifest, or an empty one.
+
+    The manifest is stored as a JSON string on the scene so it persists with the
+    .blend and can be read cheaply from poll()/draw() and enum callbacks.
+    """
+    raw = props.adv_vis_manifest if props else ""
+    if not raw:
+        return {"backgrounds": []}
+    try:
+        manifest = json.loads(raw)
+    except (ValueError, TypeError):
+        return {"backgrounds": []}
+    if not isinstance(manifest, dict):
+        return {"backgrounds": []}
+    manifest.setdefault("backgrounds", [])
+    return manifest
+
+
+# Blender garbage-collects strings returned by an EnumProperty items callback
+# unless we keep our own reference, which can crash the UI.  Cache the last
+# returned list here to keep the identifier/name strings alive.
+_image_overlay_enum_cache = [("NONE", "None", "")]
+
+
+def _image_overlay_source_items(self, context):
+    """Build the background-image dropdown from the loaded file's manifest.
+
+    Each available background source becomes one selectable item; only one can
+    be active at a time.  Falls back to a single placeholder when nothing is
+    available so the property always has a valid value.
+    """
+    global _image_overlay_enum_cache
+    items = [
+        (bg["id"], bg.get("label", bg["id"]), bg.get("data_path", ""))
+        for bg in parse_advanced_vis_manifest(self).get("backgrounds", [])
+        if bg.get("id")
+    ]
+    _image_overlay_enum_cache = items or [("NONE", "None", "")]
+    return _image_overlay_enum_cache
 
 
 class KinoraProperties(PropertyGroup):
@@ -158,6 +202,26 @@ class KinoraProperties(PropertyGroup):
         default=0,
         min=0,
         options={"HIDDEN"},
+    )
+
+    # --- Advanced visualisations -------------------------------------------
+    adv_vis_manifest: StringProperty(
+        name="Advanced Visualisation Manifest",
+        description="JSON describing optional visualisation data in the loaded file",
+        default="",
+        options={"HIDDEN"},
+    )
+
+    show_image_overlay: BoolProperty(
+        name="Show Background Overlay",
+        description="Display a pre-computed bitmap (e.g. density) on the ground plane",
+        default=False,
+    )
+
+    image_overlay_source: EnumProperty(
+        name="Source",
+        description="Which background image from the loaded file to display",
+        items=_image_overlay_source_items,
     )
 
 
