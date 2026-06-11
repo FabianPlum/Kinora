@@ -1,13 +1,15 @@
 """Background image overlay: render a pre-computed bitmap on the ground plane.
 
-Element 2 renders the *static* background source as a grayscale, shadeless
-(emission) texture on the existing ``Kinora_Ground_Plane``.  The image is mapped
-to the walkable-area bounding box via a UV layer and clipped outside it, so the
-10% padding ring keeps the plane's neutral grey.
+The selected background source (static ``image_data`` or animated
+``image_frame_data``) is drawn as a shadeless (emission) texture on the existing
+``Kinora_Ground_Plane``.  The raw value feeds a ColorRamp (the colour scheme) and
+is sampled with the chosen interpolation; the image is UV-mapped to the
+walkable-area bounding box and clipped outside it, so the 10% padding ring keeps
+the plane's neutral grey.  Animated sources are preloaded and swapped per frame
+by a frame-change handler kept in sync with the agent streaming.
 
-Deliberately left for later elements:
-  * animated (per-frame) sources and timeline sync  (Element 3)
-  * value -> colour mapping beyond grayscale          (Element 4)
+Values are assumed pre-normalised to [0, 1] upstream (clipped here, no
+rescaling); see ``_values_to_pixels``.
 """
 
 import json
@@ -74,10 +76,15 @@ def _values_to_pixels(values):
     return pixels
 
 
+def _write_pixels(image, values):
+    """Write a ``(rows, cols)`` scalar field into an existing overlay image."""
+    image.pixels.foreach_set(_values_to_pixels(values).ravel())
+    image.update()
+
+
 def _get_overlay_image(values):
     """Create or refresh the Blender image datablock holding the bitmap."""
-    pixels = _values_to_pixels(values)
-    height, width = pixels.shape[0], pixels.shape[1]
+    height, width = values.shape
     image = bpy.data.images.get(OVERLAY_IMAGE_NAME)
     if image is not None and tuple(image.size) != (width, height):
         bpy.data.images.remove(image)
@@ -88,8 +95,7 @@ def _get_overlay_image(values):
         )
     # Treat the stored values as raw data, not sRGB-encoded colour.
     image.colorspace_settings.name = "Non-Color"
-    image.pixels.foreach_set(pixels.ravel())
-    image.update()
+    _write_pixels(image, values)
     return image
 
 
@@ -181,29 +187,75 @@ def _restore_base(plane):
         _assign_material(plane, base)
 
 
+def _set_viewport_shading(context, from_types, to_type):
+    """Set 3D viewports currently in *from_types* to *to_type*.
+
+    No-op in headless/background mode (no windows).
+    """
+    wm = getattr(context, "window_manager", None) or bpy.context.window_manager
+    if wm is None:
+        return
+    for window in wm.windows:
+        for area in window.screen.areas:
+            if area.type != "VIEW_3D":
+                continue
+            for space in area.spaces:
+                if space.type == "VIEW_3D" and space.shading.type in from_types:
+                    space.shading.type = to_type
+
+
+def ensure_material_preview(context):
+    """Switch Solid/Wireframe viewports to Material Preview so the overlay shows.
+
+    The overlay is an emission material that Solid/Wireframe shading does not
+    display, so an enabled overlay would look like it failed to load.  Viewports
+    already in Rendered (which also show the overlay) are left untouched.
+    """
+    _set_viewport_shading(context, {"WIREFRAME", "SOLID"}, "MATERIAL")
+
+
+def restore_solid_shading(context):
+    """Revert Material-Preview viewports to Solid when the overlay is hidden.
+
+    Companion to :func:`ensure_material_preview`; only affects viewports
+    currently in Material Preview, leaving Rendered (and anything else) as the
+    user set them.
+    """
+    _set_viewport_shading(context, {"MATERIAL"}, "SOLID")
+
+
 def refresh(context):
     """Apply or update the background overlay according to current properties.
 
-    Safe to call any time: no plane, overlay off, or an animated/invalid source
-    simply restores the plain grey plane.  Errors reading the file are reported
-    and never raised, so a bad overlay can't break interaction.
+    Safe to call any time: no plane, overlay off, or an invalid source simply
+    restores the plain grey plane.  Errors reading the file are reported and
+    never raised, so a bad overlay can't break interaction.
     """
     props = context.scene.kinora_props
     plane = bpy.data.objects.get(GROUND_PLANE_NAME)
     if plane is None:
+        _clear_animation()
         return
 
     if not props.show_image_overlay:
+        _clear_animation()
         _restore_base(plane)
         return
 
     source = _selected_source(props)
     h5_path = bpy.path.abspath(props.sqlite_file) if props.sqlite_file else ""
-    # Animated sources arrive in Element 3; only static is rendered for now.
-    if source is None or source.get("kind") != "static" or not h5_path:
+    if source is None or not h5_path:
+        _clear_animation()
         _restore_base(plane)
         return
 
+    kind = source.get("kind")
+    if kind == "animated":
+        _refresh_animated(context, props, plane, source, h5_path)
+        return
+
+    # Static (default) source.
+    _clear_animation()
     try:
         values = _read_static_values(h5_path, source["data_path"])
     except Exception as exc:  # noqa: BLE001 - overlay must never break loading/UI
@@ -212,13 +264,145 @@ def refresh(context):
         return
 
     image = _get_overlay_image(values)
-    if not _ensure_plane_uv(plane):
+    if not _build_and_assign(plane, image, props):
         _restore_base(plane)
-        return
+
+
+def _build_and_assign(plane, image, props):
+    """UV-map the plane and assign the overlay material.  False if no UVs."""
+    if not _ensure_plane_uv(plane):
+        return False
     material = _build_overlay_material(
         image, props.image_overlay_colormap, props.image_overlay_interpolation
     )
     _assign_material(plane, material)
+    return True
+
+
+# --- Animated source --------------------------------------------------------
+# Per-frame bitmaps are preloaded into memory and swapped into the overlay image
+# by a frame-change handler, mapping Blender frames to data frames the same way
+# core.streaming maps agent positions (so the overlay stays in sync with agents).
+_ANIM = {
+    "active": False,
+    "stack": None,  # np.ndarray (T, H, W) float32, raw values
+    "frame_to_index": None,  # dict: data-frame number -> row index
+    "sorted_frames": None,  # np.ndarray of data-frame numbers, ascending
+    "last_index": -1,  # last row applied (skip redundant writes)
+}
+_anim_handler_installed = False
+
+
+def _read_animated(h5_path, source):
+    """Load the full per-frame stack and its frame-number index."""
+    import h5py
+
+    with h5py.File(h5_path, "r") as f:
+        stack = np.asarray(f[source["data_path"]][:], dtype=np.float32)  # (T, H, W)
+        frames = np.asarray(f[source["frames_path"]][:]).astype(np.int64)
+    return stack, frames
+
+
+def _refresh_animated(context, props, plane, source, h5_path):
+    """Activate the animated overlay: preload, build material, sync to timeline."""
+    try:
+        stack, frames = _read_animated(h5_path, source)
+    except Exception as exc:  # noqa: BLE001 - overlay must never break loading/UI
+        print(f"[Kinora] Failed to read animated background image: {exc}")
+        _clear_animation()
+        _restore_base(plane)
+        return
+    if stack.ndim != 3 or stack.shape[0] == 0:
+        _clear_animation()
+        _restore_base(plane)
+        return
+
+    _ANIM["stack"] = stack
+    _ANIM["sorted_frames"] = frames
+    _ANIM["frame_to_index"] = {int(fn): i for i, fn in enumerate(frames)}
+    _ANIM["last_index"] = -1
+    _ANIM["active"] = True
+
+    image = _get_overlay_image(stack[0])
+    if not _build_and_assign(plane, image, props):
+        _clear_animation()
+        _restore_base(plane)
+        return
+    _install_anim_handler()
+    _apply_anim_frame(context.scene)
+
+
+def _target_index(scene):
+    """Map the current Blender frame to a row in the preloaded stack."""
+    sorted_frames = _ANIM["sorted_frames"]
+    if sorted_frames is None or len(sorted_frames) == 0:
+        return None
+
+    # Mirror core.streaming's Blender-frame -> data-frame mapping so the overlay
+    # stays aligned with the agents.
+    from .streaming import STREAM_STATE
+
+    step = STREAM_STATE.get("frame_step") or 1
+    min_frame = STREAM_STATE.get("min_frame")
+    if min_frame is None:
+        min_frame = int(sorted_frames[0])
+    blender_frame = scene.frame_current
+    if step <= 1:
+        target = blender_frame
+    else:
+        target = min_frame + (blender_frame - scene.frame_start) * step
+
+    index = _ANIM["frame_to_index"].get(target)
+    if index is not None:
+        return index
+    # Nearest available frame when there is no exact match.
+    pos = int(np.searchsorted(sorted_frames, target))
+    pos = max(0, min(pos, len(sorted_frames) - 1))
+    if pos > 0 and abs(sorted_frames[pos - 1] - target) <= abs(sorted_frames[pos] - target):
+        pos -= 1
+    return pos
+
+
+def _apply_anim_frame(scene):
+    """Swap the overlay image to the frame matching the timeline position."""
+    if not _ANIM["active"]:
+        return
+    index = _target_index(scene)
+    if index is None or index == _ANIM["last_index"]:
+        return
+    image = bpy.data.images.get(OVERLAY_IMAGE_NAME)
+    if image is None:
+        return
+    _write_pixels(image, _ANIM["stack"][index])
+    _ANIM["last_index"] = index
+
+
+def _overlay_frame_handler(scene):
+    try:
+        _apply_anim_frame(scene)
+    except Exception as exc:  # noqa: BLE001 - never break playback
+        print(f"[Kinora] overlay frame update failed: {exc}")
+
+
+def _install_anim_handler():
+    global _anim_handler_installed
+    if not _anim_handler_installed:
+        bpy.app.handlers.frame_change_post.append(_overlay_frame_handler)
+        _anim_handler_installed = True
+
+
+def _clear_animation():
+    """Remove the frame handler and free preloaded animation state."""
+    global _anim_handler_installed
+    if _anim_handler_installed and _overlay_frame_handler in bpy.app.handlers.frame_change_post:
+        bpy.app.handlers.frame_change_post.remove(_overlay_frame_handler)
+    _anim_handler_installed = False
+    _ANIM.update(active=False, stack=None, frame_to_index=None, sorted_frames=None, last_index=-1)
+
+
+def clear_animation():
+    """Public hook to tear down animated-overlay state (load reset / unregister)."""
+    _clear_animation()
 
 
 def update_appearance(context):
