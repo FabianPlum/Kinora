@@ -31,7 +31,7 @@ from PIL import Image, ImageDraw
 # --- configuration ----------------------------------------------------------
 COLOURMAPS = ["gray", "viridis", "inferno", "magma", "turbo", "hot", "cividis"]
 DEFAULT_ANIM_CMAP = "viridis"
-UPSCALE = 8                # integer pixel zoom for crisp viewing
+UPSCALE = 8  # integer pixel zoom for crisp viewing
 GIF_FPS = 15
 INTERP = {"nearest": Image.NEAREST, "bilinear": Image.BILINEAR}
 
@@ -66,9 +66,7 @@ def montage(tiles, cols, pad=6, bg=(30, 30, 30)):
         return None
     tw, th = tiles[0].size
     rows = (len(tiles) + cols - 1) // cols
-    canvas = Image.new(
-        "RGB", (cols * tw + (cols + 1) * pad, rows * th + (rows + 1) * pad), bg
-    )
+    canvas = Image.new("RGB", (cols * tw + (cols + 1) * pad, rows * th + (rows + 1) * pad), bg)
     for i, tile in enumerate(tiles):
         r, c = divmod(i, cols)
         canvas.paste(tile, (pad + c * (tw + pad), pad + r * (th + pad)))
@@ -131,8 +129,10 @@ def dump_animated(frames, frame_idx, out_dir):
     # Montage: every Nth frame for a quick overview of the whole sequence.
     step = max(1, n // 24)
     overview = [
-        label(upscale(colourize(frames[i], DEFAULT_ANIM_CMAP, vmin, vmax), 4, Image.NEAREST),
-              f"f{int(frame_idx[i])}")
+        label(
+            upscale(colourize(frames[i], DEFAULT_ANIM_CMAP, vmin, vmax), 4, Image.NEAREST),
+            f"f{int(frame_idx[i])}",
+        )
         for i in range(0, n, step)
     ]
     montage(overview, cols=6).save(os.path.join(out_dir, "animated_overview.png"))
@@ -144,16 +144,26 @@ def dump_animated(frames, frame_idx, out_dir):
         for c in COLOURMAPS
     ]
     montage(tiles, cols=3).save(os.path.join(out_dir, "colourmaps_anim_peak.png"))
-    print(f"  wrote {n} frame PNGs + animated.gif + overview + peak compare (frame {int(frame_idx[peak])})")
+    print(
+        f"  wrote {n} frame PNGs + animated.gif + overview + peak compare (frame {int(frame_idx[peak])})"
+    )
 
 
 def main():
-    h5_path = sys.argv[1] if len(sys.argv) > 1 else os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        "kinora", "examples", "trajectory_export.h5",
+    h5_path = (
+        sys.argv[1]
+        if len(sys.argv) > 1
+        else os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "kinora",
+            "examples",
+            "trajectory_export.h5",
+        )
     )
-    out_dir = sys.argv[2] if len(sys.argv) > 2 else os.path.join(
-        tempfile.gettempdir(), "kinora_image_dump"
+    out_dir = (
+        sys.argv[2]
+        if len(sys.argv) > 2
+        else os.path.join(tempfile.gettempdir(), "kinora_image_dump")
     )
     os.makedirs(out_dir, exist_ok=True)
     print(f"file:   {h5_path}")
