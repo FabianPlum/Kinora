@@ -338,6 +338,12 @@ def create_big_data_points(context, agent_ids, agents_collection, mat_cache):
     ps_settings.use_emit_random = False
     ps_settings.render_type = "OBJECT"
     ps_settings.instance_object = instance_obj
+    # Keep instances upright. By default the particle system aligns each
+    # instance's local axis to the hair/velocity direction, which lays the
+    # Z-up cylinder on its side; rotation_mode "NONE" preserves the instance's
+    # own orientation instead.
+    ps_settings.use_rotations = True
+    ps_settings.rotation_mode = "NONE"
     ps_settings.particle_size = 0.25
     ps_settings.display_method = "RENDER"
     ps_settings.display_percentage = 100
