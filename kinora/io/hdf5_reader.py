@@ -27,13 +27,13 @@ def read_simulation_data(
     start_total = time.perf_counter()
 
     start = time.perf_counter()
-    traj = load_trajectory_from_ped_data_archive_hdf5(path)
+    traj = load_trajectory_from_ped_data_archive_hdf5(trajectory_file=path)
     timings["load_trajectory_hdf5"] = time.perf_counter() - start
     if cancel_event.is_set():
         return None, timings
 
     start = time.perf_counter()
-    walkable = load_walkable_area_from_ped_data_archive_hdf5(path)
+    walkable = load_walkable_area_from_ped_data_archive_hdf5(trajectory_file=path)
     timings["load_walkable_area_hdf5"] = time.perf_counter() - start
     if cancel_event.is_set():
         return None, timings
