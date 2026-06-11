@@ -3,6 +3,7 @@ Kinora Operators
 Operators for loading (JuPedSim) trajectory and geometry data.
 """
 
+import json
 import os
 import pathlib
 import threading
@@ -120,6 +121,7 @@ class KINORA_OT_load_simulation(Operator):
             return {"CANCELLED"}
 
         self._reset_state()
+        props.adv_vis_manifest = ""
         self._frame_step = props.frame_step
         self._big_data_mode = props.big_data_mode
         self._load_full_paths = props.load_full_paths
@@ -368,6 +370,7 @@ class KINORA_OT_load_simulation(Operator):
         self._max_frame = self._worker_data["max_frame"]
         self._sampled_frames = set()
         self._path_groups = self._worker_data.get("path_groups")
+        self._apply_advanced_vis(context)
         context.scene.kinora_props.loaded_agent_count = self._total_agents
         step = self._frame_step
         if step > 1:
@@ -381,6 +384,21 @@ class KINORA_OT_load_simulation(Operator):
             self._timings[key] = value
         if not self._big_data_mode:
             self._timed_start("create_agents")
+
+    def _apply_advanced_vis(self, context: Context) -> None:
+        """Publish the file's advanced-visualisation manifest to the scene.
+
+        Stores the manifest as JSON (driving the Advanced Visualisations panel's
+        visibility and the source dropdown) and selects the first available
+        background so the dropdown starts on a valid entry.  SQLite loads and
+        plain trajectory files clear it, hiding the panel.
+        """
+        props = context.scene.kinora_props
+        manifest = (self._worker_data or {}).get("advanced_vis") or {"backgrounds": []}
+        props.adv_vis_manifest = json.dumps(manifest)
+        backgrounds = manifest.get("backgrounds", [])
+        if backgrounds:
+            props.image_overlay_source = backgrounds[0]["id"]
 
     def _step_create_agents(self, context: Context) -> bool:
         """Create a batch of agent objects per tick."""
