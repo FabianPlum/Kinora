@@ -270,6 +270,7 @@ class KINORA_OT_load_simulation(Operator):
                 from .core import overlay
 
                 overlay.refresh(context)
+                overlay.ensure_material_preview(context)
             context.scene.frame_set(context.scene.frame_start)
             self._timed_end("finalize")
             props.loading_progress = 100.0
@@ -307,6 +308,9 @@ class KINORA_OT_load_simulation(Operator):
         self._path_groups = None
         self._materials = {}
         clear_stream_state()
+        from .core import overlay
+
+        overlay.clear_animation()
         # Start each load from a clean slate: remove all prior Kinora artefacts.
         geo.clear_all_kinora_artefacts()
 
@@ -485,5 +489,8 @@ def register() -> None:
 
 def unregister() -> None:
     clear_stream_state()
+    from .core import overlay
+
+    overlay.clear_animation()
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
