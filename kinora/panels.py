@@ -108,7 +108,7 @@ class KINORA_PT_main_panel(Panel):
         layout.separator()
         box = layout.box()
         box.label(text="Info", icon="INFO")
-        box.label(text="Agents → Animated spheres")
+        box.label(text="Agents → Animated cylinders")
         box.label(text="Geometry → Curve boundaries")
 
 
