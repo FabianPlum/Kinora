@@ -301,6 +301,8 @@ class KINORA_OT_load_simulation(Operator):
         self._path_groups = None
         self._materials = {}
         clear_stream_state()
+        # Start each load from a clean slate: remove all prior Kinora artefacts.
+        geo.clear_all_kinora_artefacts()
 
     def _finish_success(self, context: Context) -> set[str]:
         """Finalize a successful load."""
