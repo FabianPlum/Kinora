@@ -266,6 +266,10 @@ class KINORA_OT_load_simulation(Operator):
                     objects=objects,
                     frame_data=self._worker_data.get("frame_data"),
                 )
+            if props.show_image_overlay:
+                from .core import overlay
+
+                overlay.refresh(context)
             context.scene.frame_set(context.scene.frame_start)
             self._timed_end("finalize")
             props.loading_progress = 100.0
