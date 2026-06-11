@@ -14,7 +14,7 @@ value→colour contract).
 
 import bpy
 
-from . import colormaps
+from . import shading
 
 VORONOI_COLLECTION = "Kinora_Voronoi"
 VORONOI_NAME = "Kinora_Voronoi"
@@ -60,27 +60,7 @@ def _build_material(colormap):
     material = bpy.data.materials.get(VORONOI_MATERIAL_NAME)
     if material is None:
         material = bpy.data.materials.new(VORONOI_MATERIAL_NAME)
-    material.use_nodes = True
-    tree = material.node_tree
-    tree.nodes.clear()
-
-    output = tree.nodes.new("ShaderNodeOutputMaterial")
-    output.location = (400, 0)
-    emit = tree.nodes.new("ShaderNodeEmission")
-    emit.location = (200, 0)
-    ramp = tree.nodes.new("ShaderNodeValToRGB")
-    ramp.name = VORONOI_RAMP_NODE
-    ramp.location = (-100, 0)
-    colormaps.apply_colormap(ramp.color_ramp, colormap)
-    attr = tree.nodes.new("ShaderNodeAttribute")
-    attr.attribute_type = "GEOMETRY"
-    attr.attribute_name = VORONOI_VALUE_ATTR
-    attr.location = (-400, 0)
-
-    links = tree.links
-    links.new(attr.outputs["Fac"], ramp.inputs["Fac"])
-    links.new(ramp.outputs["Color"], emit.inputs["Color"])
-    links.new(emit.outputs["Emission"], output.inputs["Surface"])
+    shading.build_attribute_emission(material, VORONOI_VALUE_ATTR, VORONOI_RAMP_NODE, colormap)
     return material
 
 
@@ -176,12 +156,9 @@ def refresh(context):
 
 def update_appearance(context):
     """Update the Voronoi colour map live.  No-op when not currently active."""
-    material = bpy.data.materials.get(VORONOI_MATERIAL_NAME)
-    if material is None:
-        return
-    ramp = material.node_tree.nodes.get(VORONOI_RAMP_NODE)
-    if ramp is not None:
-        colormaps.apply_colormap(ramp.color_ramp, context.scene.kinora_props.voronoi_colormap)
+    shading.update_ramp(
+        VORONOI_MATERIAL_NAME, VORONOI_RAMP_NODE, context.scene.kinora_props.voronoi_colormap
+    )
 
 
 def clear():

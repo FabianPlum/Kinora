@@ -18,7 +18,7 @@ is a no-op unless the loaded simulation is in default mode.
 
 import bpy
 
-from . import colormaps
+from . import shading
 from .geometry import AGENT_DEFAULT_RGBA, set_material_color
 
 AGENT_MATERIAL_NAME = "Kinora_Agent_Material"
@@ -29,37 +29,18 @@ def _build_color_material(colormap):
     """Convert the shared agent material to an Object-Info → ColorRamp emission.
 
     The agent's ``obj.color`` (set per frame to ``(v, v, v, 1)``) feeds the
-    ColorRamp's Fac via the Object Info node; the resulting colour drives a
-    shadeless emission so the agents show exact colour-map colours under a
-    Standard view transform.  The material is shared across all agents (the agent
-    mesh is shared), but Object Info reads each object's own colour, so agents
-    colour independently.
+    ColorRamp's Fac via the Object Info node (its Color output is the object's own
+    colour, so agents colour independently despite sharing one mesh + material);
+    the resulting colour drives the shared shadeless emission tail.
     """
     material = bpy.data.materials.get(AGENT_MATERIAL_NAME)
     if material is None:
         material = bpy.data.materials.new(AGENT_MATERIAL_NAME)
-    material.use_nodes = True
+    ramp = shading.build_emission_ramp(material, AGENT_COLOR_RAMP_NODE, colormap)
     tree = material.node_tree
-    tree.nodes.clear()
-
-    output = tree.nodes.new("ShaderNodeOutputMaterial")
-    output.location = (400, 0)
-
-    emit = tree.nodes.new("ShaderNodeEmission")
-    emit.location = (200, 0)
-
-    ramp = tree.nodes.new("ShaderNodeValToRGB")  # ColorRamp = value -> colour
-    ramp.name = AGENT_COLOR_RAMP_NODE
-    ramp.location = (-100, 0)
-    colormaps.apply_colormap(ramp.color_ramp, colormap)
-
     obj_info = tree.nodes.new("ShaderNodeObjectInfo")
     obj_info.location = (-400, 0)
-
-    links = tree.links
-    links.new(obj_info.outputs["Color"], ramp.inputs["Fac"])
-    links.new(ramp.outputs["Color"], emit.inputs["Color"])
-    links.new(emit.outputs["Emission"], output.inputs["Surface"])
+    tree.links.new(obj_info.outputs["Color"], ramp.inputs["Fac"])
     return material
 
 
@@ -120,9 +101,6 @@ def update_appearance(context):
     so the colour-scheme enum updates immediately.  No-op when agent colouring is
     not currently active.
     """
-    material = bpy.data.materials.get(AGENT_MATERIAL_NAME)
-    if material is None or not material.use_nodes:
-        return
-    ramp = material.node_tree.nodes.get(AGENT_COLOR_RAMP_NODE)
-    if ramp is not None:
-        colormaps.apply_colormap(ramp.color_ramp, context.scene.kinora_props.agent_color_colormap)
+    shading.update_ramp(
+        AGENT_MATERIAL_NAME, AGENT_COLOR_RAMP_NODE, context.scene.kinora_props.agent_color_colormap
+    )

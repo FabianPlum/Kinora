@@ -13,7 +13,7 @@ clipped to [0, 1] upstream (the project-wide value→colour contract).
 
 import bpy
 
-from . import colormaps
+from . import shading
 from .geometry import PATH_DEFAULT_RGBA, PATH_VALUE_ATTR, set_material_color
 
 PATH_MATERIAL_NAME = "Kinora_Path_Material"
@@ -32,39 +32,6 @@ def _paths_have_values() -> bool:
     return False
 
 
-def _build_color_material(material, colormap):
-    """Wire the path material to colour segments from PATH_VALUE_ATTR.
-
-    Attribute (the per-vertex scalar) → ColorRamp (the colour scheme) → shadeless
-    emission, so segments show exact colour-map colours under a Standard view
-    transform and the colour map can change without touching the mesh data.
-    """
-    material.use_nodes = True
-    tree = material.node_tree
-    tree.nodes.clear()
-
-    output = tree.nodes.new("ShaderNodeOutputMaterial")
-    output.location = (400, 0)
-
-    emit = tree.nodes.new("ShaderNodeEmission")
-    emit.location = (200, 0)
-
-    ramp = tree.nodes.new("ShaderNodeValToRGB")  # ColorRamp = value -> colour
-    ramp.name = PATH_RAMP_NODE
-    ramp.location = (-100, 0)
-    colormaps.apply_colormap(ramp.color_ramp, colormap)
-
-    attr = tree.nodes.new("ShaderNodeAttribute")
-    attr.attribute_type = "GEOMETRY"
-    attr.attribute_name = PATH_VALUE_ATTR
-    attr.location = (-400, 0)
-
-    links = tree.links
-    links.new(attr.outputs["Fac"], ramp.inputs["Fac"])
-    links.new(ramp.outputs["Color"], emit.inputs["Color"])
-    links.new(emit.outputs["Emission"], output.inputs["Surface"])
-
-
 def refresh(context):
     """Enable or disable path colouring according to the current properties.
 
@@ -77,7 +44,11 @@ def refresh(context):
         return  # no paths loaded
     props = context.scene.kinora_props
     if props.show_path_colors and _paths_have_values():
-        _build_color_material(material, props.agent_color_colormap)
+        # Attribute(PATH_VALUE_ATTR) -> ColorRamp -> emission; colours each segment
+        # from the baked per-vertex scalar without touching the mesh.
+        shading.build_attribute_emission(
+            material, PATH_VALUE_ATTR, PATH_RAMP_NODE, props.agent_color_colormap
+        )
     else:
         set_material_color(material, PATH_DEFAULT_RGBA)
 
@@ -87,9 +58,6 @@ def update_appearance(context):
 
     No-op when path colouring is not currently active.
     """
-    material = bpy.data.materials.get(PATH_MATERIAL_NAME)
-    if material is None:
-        return
-    ramp = material.node_tree.nodes.get(PATH_RAMP_NODE)
-    if ramp is not None:
-        colormaps.apply_colormap(ramp.color_ramp, context.scene.kinora_props.agent_color_colormap)
+    shading.update_ramp(
+        PATH_MATERIAL_NAME, PATH_RAMP_NODE, context.scene.kinora_props.agent_color_colormap
+    )
