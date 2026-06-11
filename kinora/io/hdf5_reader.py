@@ -6,6 +6,64 @@ import time
 from typing import Any
 
 
+def probe_advanced_visualisations(path: pathlib.Path) -> dict[str, Any]:
+    """Scan an HDF5 file for optional Kinora "advanced visualisation" datasets.
+
+    Returns a manifest describing the extra, non-trajectory data a file provides
+    (currently background image bitmaps).  Datasets that are absent or have an
+    unexpected layout are simply skipped, so an ordinary trajectory file yields
+    an empty manifest and the Advanced Visualisations UI stays hidden.
+
+    The manifest is intentionally open-ended: ``backgrounds`` is a list of
+    self-describing option dicts so future source types slot in without changing
+    the consumers.
+    """
+    import h5py
+
+    backgrounds: list[dict[str, Any]] = []
+    try:
+        with h5py.File(path, "r") as f:
+            # Static, single-frame background bitmap.
+            static = f.get("image_data")
+            if isinstance(static, h5py.Dataset) and static.ndim == 2:
+                backgrounds.append(
+                    {
+                        "id": "image_data",
+                        "label": "Static image (image_data)",
+                        "kind": "static",
+                        "data_path": "image_data",
+                        "shape": list(static.shape),
+                    }
+                )
+
+            # Animated, per-frame background bitmap.
+            group = f.get("image_frame_data")
+            if isinstance(group, h5py.Group):
+                frames = group.get("data")
+                index = group.get("frame")
+                if (
+                    isinstance(frames, h5py.Dataset)
+                    and frames.ndim == 3
+                    and isinstance(index, h5py.Dataset)
+                ):
+                    backgrounds.append(
+                        {
+                            "id": "image_frame_data",
+                            "label": "Animated image (image_frame_data)",
+                            "kind": "animated",
+                            "data_path": "image_frame_data/data",
+                            "frames_path": "image_frame_data/frame",
+                            "shape": list(frames.shape),
+                        }
+                    )
+    except Exception:
+        # A malformed or unreadable file must never block trajectory loading;
+        # advanced visualisations are strictly optional.
+        return {"backgrounds": []}
+
+    return {"backgrounds": backgrounds}
+
+
 def read_simulation_data(
     path: pathlib.Path,
     frame_step: int,
@@ -82,6 +140,10 @@ def read_simulation_data(
 
     timings["load_hdf5_total"] = time.perf_counter() - start_total
 
+    start = time.perf_counter()
+    advanced_vis = probe_advanced_visualisations(path)
+    timings["probe_advanced_vis_hdf5"] = time.perf_counter() - start
+
     data = {
         "geometry": walkable.polygon,
         "agent_ids": agent_ids,
@@ -92,5 +154,6 @@ def read_simulation_data(
         "db_path": None,
         "frame_data": frame_data,
         "path_groups": path_groups,
+        "advanced_vis": advanced_vis,
     }
     return data, timings

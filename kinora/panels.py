@@ -112,6 +112,40 @@ class KINORA_PT_main_panel(Panel):
         box.label(text="Geometry → Curve boundaries")
 
 
+class KINORA_PT_advanced_vis_panel(Panel):
+    """Advanced visualisation options, shown only when the file provides them."""
+
+    bl_label = "Advanced Visualisations"
+    bl_idname = "KINORA_PT_advanced_vis_panel"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "Kinora"
+    bl_options = {"DEFAULT_CLOSED"}
+
+    @classmethod
+    def poll(cls, context: Context) -> bool:
+        from . import parse_advanced_vis_manifest
+
+        props = getattr(context.scene, "kinora_props", None)
+        if not props:
+            return False
+        manifest = parse_advanced_vis_manifest(props)
+        return bool(manifest.get("backgrounds"))
+
+    def draw(self, context: Context) -> None:
+        layout = self.layout
+        props = context.scene.kinora_props
+
+        box = layout.box()
+        box.label(text="Background Image", icon="IMAGE_DATA")
+        box.prop(props, "show_image_overlay", text="Show Overlay")
+        col = box.column()
+        col.enabled = props.show_image_overlay
+        col.prop(props, "image_overlay_source", text="Source")
+        col.prop(props, "image_overlay_colormap", text="Colour")
+        col.prop(props, "image_overlay_interpolation", text="Interp")
+
+
 class KINORA_PT_info_panel(Panel):
     """Info panel showing loaded simulation statistics."""
 
@@ -145,6 +179,7 @@ class KINORA_PT_info_panel(Panel):
 
 classes = [
     KINORA_PT_main_panel,
+    KINORA_PT_advanced_vis_panel,
     KINORA_PT_info_panel,
 ]
 
