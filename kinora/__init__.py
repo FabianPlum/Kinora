@@ -80,14 +80,15 @@ def update_image_overlay_visibility(self, context):
 
     Enabling switches Solid/Wireframe viewports to Material Preview so the
     emission material is actually visible (otherwise it looks like the bitmap
-    failed to load); disabling reverts Material-Preview viewports to Solid.
+    failed to load); disabling reverts Material-Preview viewports to Solid only
+    when agent colouring (which also needs Material Preview) is not active.
     """
     from .core import overlay
 
     overlay.refresh(context)
     if self.show_image_overlay:
         overlay.ensure_material_preview(context)
-    else:
+    elif not self.show_agent_colors:
         overlay.restore_solid_shading(context)
 
 
@@ -107,6 +108,30 @@ def update_image_overlay_appearance(self, context):
     overlay.update_appearance(context)
 
 
+def update_agent_colors_visibility(self, context):
+    """Enable/disable per-agent colouring and sync viewport shading.
+
+    Like the overlay, the per-agent colours are an emission material only visible
+    in Material Preview/Rendered, so enabling switches Solid/Wireframe viewports
+    to Material Preview; disabling reverts to Solid only when the background
+    overlay (which also needs Material Preview) is not active.
+    """
+    from .core import agent_colors, overlay
+
+    agent_colors.refresh(context)
+    if self.show_agent_colors:
+        overlay.ensure_material_preview(context)
+    elif not self.show_image_overlay:
+        overlay.restore_solid_shading(context)
+
+
+def update_agent_colors_appearance(self, context):
+    """Update the agent colour map without re-reading the file."""
+    from .core import agent_colors
+
+    agent_colors.update_appearance(context)
+
+
 def parse_advanced_vis_manifest(props):
     """Return the parsed advanced-visualisation manifest, or an empty one.
 
@@ -114,15 +139,17 @@ def parse_advanced_vis_manifest(props):
     .blend and can be read cheaply from poll()/draw() and enum callbacks.
     """
     raw = props.adv_vis_manifest if props else ""
+    empty = {"backgrounds": [], "agent_colors": []}
     if not raw:
-        return {"backgrounds": []}
+        return empty
     try:
         manifest = json.loads(raw)
     except (ValueError, TypeError):
-        return {"backgrounds": []}
+        return empty
     if not isinstance(manifest, dict):
-        return {"backgrounds": []}
+        return empty
     manifest.setdefault("backgrounds", [])
+    manifest.setdefault("agent_colors", [])
     return manifest
 
 
@@ -273,6 +300,23 @@ class KinoraProperties(PropertyGroup):
         items=colormaps.INTERPOLATION_ITEMS,
         default=colormaps.DEFAULT_INTERPOLATION,
         update=update_image_overlay_appearance,
+    )
+
+    show_agent_colors: BoolProperty(
+        name="Colour Agents by Data",
+        description=(
+            "Colour each agent from its per-frame position_data scalar (default playback mode only)"
+        ),
+        default=False,
+        update=update_agent_colors_visibility,
+    )
+
+    agent_color_colormap: EnumProperty(
+        name="Colour Scheme",
+        description="Colour map applied to the per-agent data values",
+        items=colormaps.COLORMAP_ITEMS,
+        default=colormaps.DEFAULT_COLORMAP,
+        update=update_agent_colors_appearance,
     )
 
 
