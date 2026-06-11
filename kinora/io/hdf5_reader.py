@@ -32,6 +32,25 @@ def _is_polygon_dataset(dataset) -> bool:
     return _has_fields(dataset, _POLYGON_FIELDS)
 
 
+def _read_dataset_rows(path: pathlib.Path, name: str, validator):
+    """Return a structured dataset's rows in memory, or None.
+
+    Opens *path*, returns ``dataset[:]`` when *name* exists and passes *validator*,
+    and swallows any error (returning None) so an optional dataset can never block
+    trajectory loading.
+    """
+    import h5py
+
+    try:
+        with h5py.File(path, "r") as f:
+            dataset = f.get(name)
+            if not validator(dataset):
+                return None
+            return dataset[:]
+    except Exception:
+        return None
+
+
 def probe_advanced_visualisations(path: pathlib.Path) -> dict[str, Any]:
     """Scan an HDF5 file for optional Kinora "advanced visualisation" datasets.
 
@@ -123,16 +142,10 @@ def read_agent_color_data(
     streamed positions.  Returns ``None`` when the file has no usable
     ``position_data`` so callers can simply skip agent colouring.
     """
-    import h5py
     import numpy as np
 
-    try:
-        with h5py.File(path, "r") as f:
-            dataset = f.get("position_data")
-            if not _is_agent_color_dataset(dataset):
-                return None
-            rows = dataset[:]
-    except Exception:
+    rows = _read_dataset_rows(path, "position_data", _is_agent_color_dataset)
+    if rows is None:
         return None
 
     ids = rows["id"].astype(np.int64)
@@ -175,17 +188,11 @@ def read_polygon_data(
     overlay stays aligned with the streamed agents.  Returns None when the file has
     no usable ``polygon_data``.
     """
-    import h5py
     import numpy as np
     from shapely import wkt
 
-    try:
-        with h5py.File(path, "r") as f:
-            dataset = f.get("polygon_data")
-            if not _is_polygon_dataset(dataset):
-                return None
-            rows = dataset[:]
-    except Exception:
+    rows = _read_dataset_rows(path, "polygon_data", _is_polygon_dataset)
+    if rows is None:
         return None
 
     frames = rows["frame"].astype(np.int64)
