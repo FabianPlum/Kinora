@@ -86,6 +86,9 @@ def create_geometry(context, geometry, collection, mat_cache):
         bm.free()
         plane_obj = bpy.data.objects.new("Kinora_Ground_Plane", plane_mesh)
         plane_obj.location = (0.0, 0.0, 0.0)
+        # Record the (unpadded) walkable-area bounds so the background-image
+        # overlay can UV-map a bitmap onto the exact geometry extent.
+        plane_obj["kinora_geo_bounds"] = [bounds[0], bounds[1], bounds[2], bounds[3]]
         plane_material = get_or_create_material(
             mat_cache, "Kinora_Ground_Plane_Material", (0.85, 0.85, 0.85, 1.0)
         )
@@ -180,7 +183,13 @@ def clear_all_kinora_artefacts():
             bpy.data.collections.remove(coll)
 
     # Purge Kinora datablocks orphaned by the object removals.
-    for datablocks in (bpy.data.meshes, bpy.data.curves, bpy.data.materials, bpy.data.particles):
+    for datablocks in (
+        bpy.data.meshes,
+        bpy.data.curves,
+        bpy.data.materials,
+        bpy.data.particles,
+        bpy.data.images,
+    ):
         for block in list(datablocks):
             if block.users == 0 and _is_kinora_name(block.name):
                 datablocks.remove(block)
