@@ -142,24 +142,92 @@ def _create_curve_from_coords(context, name, coords, collection, mat_cache, clos
 
 _shared_agent_mesh = None
 
+# Every object / datablock Kinora creates is named with one of these.
+_KINORA_COLLECTIONS = ("Kinora_Agents", "Kinora_Geometry")
+_KINORA_NAME_PREFIXES = ("Agent_", "Path_Agent_", "Obstacle_", "Kinora_", "Walkable_Area_")
+
+
+def _is_kinora_name(name):
+    """Return True if *name* belongs to a Kinora-created object or datablock."""
+    return name.startswith(_KINORA_NAME_PREFIXES)
+
+
+def clear_all_kinora_artefacts():
+    """Remove every Kinora object, collection and orphaned datablock from the file.
+
+    Loading a new simulation starts from a clean slate: this deletes agents,
+    geometry, the ground plane, particle objects and paths wherever they live in
+    the scene (not just inside the Kinora collections), removes the Kinora
+    collections, then purges any now-orphaned Kinora meshes, curves, materials
+    and particle settings.
+    """
+    global _shared_agent_mesh
+
+    # Objects: union of Kinora collection members and anything matching our names.
+    doomed = set()
+    for coll_name in _KINORA_COLLECTIONS:
+        coll = bpy.data.collections.get(coll_name)
+        if coll:
+            doomed.update(coll.objects)
+    doomed.update(obj for obj in bpy.data.objects if _is_kinora_name(obj.name))
+    for obj in doomed:
+        bpy.data.objects.remove(obj, do_unlink=True)
+
+    # Remove the (now empty) Kinora collections.
+    for coll_name in _KINORA_COLLECTIONS:
+        coll = bpy.data.collections.get(coll_name)
+        if coll:
+            bpy.data.collections.remove(coll)
+
+    # Purge Kinora datablocks orphaned by the object removals.
+    for datablocks in (bpy.data.meshes, bpy.data.curves, bpy.data.materials, bpy.data.particles):
+        for block in list(datablocks):
+            if block.users == 0 and _is_kinora_name(block.name):
+                datablocks.remove(block)
+
+    # The cached shared mesh may have just been purged; rebuild it on next use.
+    _shared_agent_mesh = None
+
 
 def _get_shared_agent_mesh():
-    """Return a shared icosphere mesh, creating it once."""
+    """Return a shared cylinder mesh, creating it once.
+
+    The cached reference is invalidated if the mesh datablock is removed (e.g.
+    the user deletes every agent and Blender purges the now-orphaned mesh),
+    leaving ``_shared_agent_mesh`` pointing at a freed StructRNA.  Validate it
+    defensively and rebuild when stale instead of dereferencing a dead pointer.
+    """
     global _shared_agent_mesh
-    if _shared_agent_mesh is None or _shared_agent_mesh.name not in bpy.data.meshes:
+    try:
+        valid = _shared_agent_mesh is not None and _shared_agent_mesh.name in bpy.data.meshes
+    except ReferenceError:
+        valid = False
+    if not valid:
         mesh = bpy.data.meshes.new("Kinora_Agent_Shared_Mesh")
         bm = bmesh.new()
-        bmesh.ops.create_icosphere(bm, subdivisions=2, radius=0.5)
+        # Unit cylinder: radius 0.5 and depth 1.0 keep the 1x1x1 bounding box,
+        # so the agent_scale dimension scaling is unchanged from the icosphere.
+        bmesh.ops.create_cone(
+            bm,
+            cap_ends=True,
+            cap_tris=False,
+            segments=32,
+            radius1=0.5,
+            radius2=0.5,
+            depth=1.0,
+        )
+        # Smooth the curved side faces (quads) only; keep the flat caps faceted.
+        for face in bm.faces:
+            face.smooth = len(face.verts) == 4
         bm.to_mesh(mesh)
         bm.free()
-        mesh.polygons.foreach_set("use_smooth", [True] * len(mesh.polygons))
         mesh.update()
         _shared_agent_mesh = mesh
     return _shared_agent_mesh
 
 
 def create_agent(context, agent_id, collection, mat_cache):
-    """Create an icosphere object for a single agent (streamed positions)."""
+    """Create a cylinder object for a single agent (streamed positions)."""
     mesh = _get_shared_agent_mesh()
     agent_obj = bpy.data.objects.new(f"Agent_{agent_id}", mesh)
     agent_material = get_or_create_material(
@@ -223,10 +291,20 @@ def create_big_data_points(context, agent_ids, agents_collection, mat_cache):
 
     instance_mesh = bpy.data.meshes.new("Kinora_ParticleInstanceMesh")
     bm = bmesh.new()
-    bmesh.ops.create_icosphere(bm, subdivisions=1, radius=0.5)
+    # Low-poly unit cylinder (radius 0.5, depth 1.0) matching the icosphere bounds.
+    bmesh.ops.create_cone(
+        bm,
+        cap_ends=True,
+        cap_tris=False,
+        segments=16,
+        radius1=0.5,
+        radius2=0.5,
+        depth=1.0,
+    )
+    for face in bm.faces:
+        face.smooth = len(face.verts) == 4
     bm.to_mesh(instance_mesh)
     bm.free()
-    instance_mesh.polygons.foreach_set("use_smooth", [True] * len(instance_mesh.polygons))
     instance_mesh.update()
 
     instance_obj = bpy.data.objects.new("Kinora_ParticleInstance", instance_mesh)
