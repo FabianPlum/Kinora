@@ -2,22 +2,36 @@ name: Blender Addon CI
 
 on:
   push:
+    branches: [main]
   pull_request:
+
+# Avoid duplicate/expensive runs: cancel superseded runs on the same ref, and
+# don't double-fire on a branch push that already has an open PR.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   addon-smoke-test:
-    runs-on: ubuntu-latest
+    name: ${{ matrix.os }} · Blender ${{ matrix.blender.version }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        blender:
+          - { version: "5.0.1", major: "Blender5.0" }
+          - { version: "5.1.2", major: "Blender5.1" }
 
     env:
       ADDON_MODULE: "kinora"
-      BLENDER_VERSION: "5.0.1"
-      BLENDER_MAJOR_DIR: "Blender5.0"
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install system dependencies (headless)
+      - name: Install system dependencies (Linux headless)
+        if: runner.os == 'Linux'
         run: |
           set -euxo pipefail
           sudo apt-get update
@@ -26,87 +40,94 @@ jobs:
             libxi6 libxrender1 libxkbcommon0 libsm6 \
             libgl1 libglib2.0-0 libgomp1
 
-      - name: Download Blender ${{ env.BLENDER_VERSION }}
+      - name: Download Blender ${{ matrix.blender.version }} (Linux)
+        if: runner.os == 'Linux'
         run: |
           set -euxo pipefail
-          TARBALL="blender-${BLENDER_VERSION}-linux-x64.tar.xz"
-          URL="https://download.blender.org/release/${BLENDER_MAJOR_DIR}/${TARBALL}"
-
-          echo "Downloading from: $URL"
+          TARBALL="blender-${{ matrix.blender.version }}-linux-x64.tar.xz"
+          URL="https://download.blender.org/release/${{ matrix.blender.major }}/${TARBALL}"
+          echo "Downloading $URL"
           curl -fL "$URL" -o "$TARBALL"
           tar -xf "$TARBALL"
+          BIN="${GITHUB_WORKSPACE}/blender-${{ matrix.blender.version }}-linux-x64/blender"
+          echo "BLENDER_BIN=$BIN" >> "$GITHUB_ENV"
+          "$BIN" --version
 
-          BLENDER_DIR="blender-${BLENDER_VERSION}-linux-x64"
-          echo "BLENDER_BIN=${GITHUB_WORKSPACE}/${BLENDER_DIR}/blender" >> "$GITHUB_ENV"
+      - name: Download Blender ${{ matrix.blender.version }} (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          set -euxo pipefail
+          DMG="blender-${{ matrix.blender.version }}-macos-arm64.dmg"
+          URL="https://download.blender.org/release/${{ matrix.blender.major }}/${DMG}"
+          echo "Downloading $URL"
+          curl -fL "$URL" -o "$DMG"
+          hdiutil attach "$DMG" -nobrowse
+          APP="$(find /Volumes -maxdepth 2 -name 'Blender.app' -type d | head -1)"
+          cp -R "$APP" /tmp/Blender.app
+          hdiutil detach "$(dirname "$APP")" || true
+          xattr -cr /tmp/Blender.app || true
+          BIN="/tmp/Blender.app/Contents/MacOS/Blender"
+          echo "BLENDER_BIN=$BIN" >> "$GITHUB_ENV"
+          "$BIN" --version
 
-          "${GITHUB_WORKSPACE}/${BLENDER_DIR}/blender" --version
-
-      - name: Install dependencies
+      - name: Install dependencies (constrained to Blender's bundled numpy)
         shell: bash
         run: |
           set -euxo pipefail
 
-          # Use the addon's own install_utils module
-          cat > /tmp/install_deps.py <<'PY'
+          cat > "${RUNNER_TEMP}/install_deps.py" <<'PY'
           import os
           import sys
 
           addon_dir = os.path.join(os.environ['GITHUB_WORKSPACE'], 'kinora')
-          if addon_dir not in sys.path:
+          if os.path.dirname(addon_dir) not in sys.path:
               sys.path.insert(0, os.path.dirname(addon_dir))
 
           from kinora import install_utils
 
           print("=" * 60)
-          print(f"Blender Python: {sys.executable}")
-          print(f"Python version: {sys.version}")
-          print(f"Addon directory: {addon_dir}")
+          print(f"Blender Python : {sys.executable}")
+          print(f"Python version : {sys.version.split()[0]}")
           print("=" * 60)
 
           success, message = install_utils.install_dependencies(addon_dir)
-
-          if success:
-              print(f"\n✓ {message}")
-
-              install_utils.ensure_deps_in_path(addon_dir)
-              if install_utils.is_pedpy_installed(addon_dir):
-                  import pedpy
-                  print(f"✓ pedpy version: {pedpy.__version__}")
-              else:
-                  print("\n✗ pedpy import failed after installation")
-                  sys.exit(1)
-          else:
-              print(f"\n✗ {message}")
+          if not success:
+              print(f"\n[FAIL] {message}")
               sys.exit(1)
+          print(f"\n[OK] {message}")
+
+          install_utils.ensure_deps_in_path(addon_dir)
+          if not install_utils.is_pedpy_installed(addon_dir):
+              print("\n[FAIL] pedpy not importable after install")
+              sys.exit(1)
+          import pedpy
+          print(f"[OK] pedpy {pedpy.__version__}")
+
+          # Regression guard for the dependency-collision bug: Blender's own
+          # numpy must win at import time, NOT the copy under kinora/deps.
+          import numpy
+          deps_real = os.path.realpath(install_utils.get_deps_dir(addon_dir))
+          numpy_real = os.path.realpath(numpy.__file__)
+          print(f"[INFO] numpy {numpy.__version__} <- {numpy_real}")
+          if numpy_real.startswith(deps_real):
+              print("\n[FAIL] numpy loaded FROM deps — runtime collision not fixed!")
+              sys.exit(1)
+          print("[OK] numpy resolves to Blender's bundled copy, not deps")
           PY
 
-          "$BLENDER_BIN" --background --python /tmp/install_deps.py
+          "$BLENDER_BIN" --background --python "${RUNNER_TEMP}/install_deps.py"
 
-      - name: Verify installation matches addon expectations
+      - name: Verify deps directory contents
         shell: bash
         run: |
           set -euxo pipefail
-
           DEPS_DIR="${GITHUB_WORKSPACE}/kinora/deps"
+          test -d "$DEPS_DIR" || { echo "deps directory missing: $DEPS_DIR"; exit 1; }
+          test -d "$DEPS_DIR/pedpy" || { echo "pedpy not found in deps"; exit 1; }
+          echo "deps directory contents:"
+          ls -1 "$DEPS_DIR"
 
-          if [ ! -d "$DEPS_DIR" ]; then
-            echo "✗ deps directory not found at: $DEPS_DIR"
-            exit 1
-          fi
-
-          echo "✓ deps directory exists at: $DEPS_DIR"
-
-          if [ ! -d "$DEPS_DIR/pedpy" ]; then
-            echo "✗ pedpy package not found in deps directory"
-            exit 1
-          fi
-
-          echo "✓ pedpy package found in deps directory"
-          echo ""
-          echo "Contents of deps directory:"
-          ls -la "$DEPS_DIR"
-
-      - name: Run add-on loading test with SQLite
+      - name: Run add-on loading test (SQLite + HDF5 + example)
         shell: bash
         run: |
           set -euxo pipefail
@@ -125,4 +146,3 @@ jobs:
             --test-sqlite-loading \
             --test-hdf5-loading \
             --test-example-file
-

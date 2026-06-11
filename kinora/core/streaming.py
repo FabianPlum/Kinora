@@ -24,6 +24,7 @@ STREAM_STATE: dict[str, Any] = {
     "object_name": None,
     "handler_installed": False,
     "frame_data": None,  # dict: frame_number -> list of (id, x, y) tuples (HDF5 mode)
+    "visible_indices": set(),  # indices currently shown (default mode); avoids per-frame hide churn
 }
 
 
@@ -72,18 +73,28 @@ def stream_frame_handler(scene: bpy.types.Scene) -> None:
         obj.data.update()
         return
 
-    # Default mode: update agent objects directly.
-    for obj in state["objects"]:
-        obj.hide_viewport = True
-        obj.hide_render = True
+    # Default mode: update agent objects directly.  Writing hide_viewport/
+    # hide_render on every agent each frame forces a full depsgraph rebuild and
+    # viewport redraw, which dominates playback cost.  Only write visibility
+    # flags for agents whose presence actually changed since the last frame.
+    objects = state["objects"]
+    visible = state["visible_indices"]
+    new_visible = set()
     for agent_id, x, y in rows:
         idx = state["id_to_index"].get(agent_id)
         if idx is None:
             continue
-        obj = state["objects"][idx]
+        obj = objects[idx]
         obj.location = (float(x), float(y), 0.5)
-        obj.hide_viewport = False
-        obj.hide_render = False
+        if idx not in visible:
+            obj.hide_viewport = False
+            obj.hide_render = False
+        new_visible.add(idx)
+    for idx in visible - new_visible:
+        obj = objects[idx]
+        obj.hide_viewport = True
+        obj.hide_render = True
+    state["visible_indices"] = new_visible
 
 
 def start_streaming(
@@ -108,6 +119,8 @@ def start_streaming(
     STREAM_STATE["mode"] = mode
     STREAM_STATE["objects"] = objects or []
     STREAM_STATE["object_name"] = object_name
+    # Agents are created hidden, so no index is visible yet.
+    STREAM_STATE["visible_indices"] = set()
     if not STREAM_STATE["handler_installed"]:
         bpy.app.handlers.frame_change_pre.append(stream_frame_handler)
         STREAM_STATE["handler_installed"] = True
@@ -132,4 +145,5 @@ def clear_stream_state() -> None:
     STREAM_STATE["mode"] = None
     STREAM_STATE["objects"] = []
     STREAM_STATE["object_name"] = None
+    STREAM_STATE["visible_indices"] = set()
     STREAM_STATE["handler_installed"] = False
