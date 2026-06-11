@@ -233,6 +233,7 @@ class KINORA_OT_load_simulation(Operator):
                 mode="big",
                 object_name=obj_name,
                 frame_data=self._worker_data.get("frame_data"),
+                color_frame_data=self._worker_data.get("color_frame_data"),
             )
             props.loading_message = "Creating particle points..."
             props.loading_progress = 90.0
@@ -265,11 +266,19 @@ class KINORA_OT_load_simulation(Operator):
                     mode="default",
                     objects=objects,
                     frame_data=self._worker_data.get("frame_data"),
+                    color_frame_data=self._worker_data.get("color_frame_data"),
                 )
-            if props.show_image_overlay:
+            if props.show_image_overlay or props.show_agent_colors:
                 from .core import overlay
 
-                overlay.refresh(context)
+                if props.show_image_overlay:
+                    overlay.refresh(context)
+                if props.show_agent_colors:
+                    from .core import agent_colors
+
+                    agent_colors.refresh(context)
+                # Both effects are emission materials only visible in Material
+                # Preview / Rendered, so switch any Solid/Wireframe viewports once.
                 overlay.ensure_material_preview(context)
             context.scene.frame_set(context.scene.frame_start)
             self._timed_end("finalize")
