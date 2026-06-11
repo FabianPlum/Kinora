@@ -130,20 +130,35 @@ class KINORA_PT_advanced_vis_panel(Panel):
         if not props:
             return False
         manifest = parse_advanced_vis_manifest(props)
-        return bool(manifest.get("backgrounds"))
+        return bool(manifest.get("backgrounds") or manifest.get("agent_colors"))
 
     def draw(self, context: Context) -> None:
+        from . import parse_advanced_vis_manifest
+        from .core.streaming import STREAM_STATE
+
         layout = self.layout
         props = context.scene.kinora_props
+        manifest = parse_advanced_vis_manifest(props)
 
-        box = layout.box()
-        box.label(text="Background Image", icon="IMAGE_DATA")
-        box.prop(props, "show_image_overlay", text="Show Overlay")
-        col = box.column()
-        col.enabled = props.show_image_overlay
-        col.prop(props, "image_overlay_source", text="Source")
-        col.prop(props, "image_overlay_colormap", text="Colour")
-        col.prop(props, "image_overlay_interpolation", text="Interp")
+        if manifest.get("backgrounds"):
+            box = layout.box()
+            box.label(text="Background Image", icon="IMAGE_DATA")
+            box.prop(props, "show_image_overlay", text="Show Overlay")
+            col = box.column()
+            col.enabled = props.show_image_overlay
+            col.prop(props, "image_overlay_source", text="Source")
+            col.prop(props, "image_overlay_colormap", text="Colour")
+            col.prop(props, "image_overlay_interpolation", text="Interp")
+
+        if manifest.get("agent_colors"):
+            box = layout.box()
+            box.label(text="Agent Colour", icon="COLOR")
+            box.prop(props, "show_agent_colors", text="Colour by Data")
+            col = box.column()
+            col.enabled = props.show_agent_colors
+            col.prop(props, "agent_color_colormap", text="Colour")
+            if STREAM_STATE.get("mode") == "big":
+                box.label(text="Not available in Big Data Mode", icon="INFO")
 
 
 class KINORA_PT_info_panel(Panel):
