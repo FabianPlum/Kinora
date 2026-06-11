@@ -38,6 +38,7 @@ from bpy.types import PropertyGroup
 
 # Import submodules
 from . import operators, panels, preferences
+from .core import colormaps
 
 
 def update_path_visibility(self, context):
@@ -72,6 +73,20 @@ def update_geometry_thickness(self, context):
     for obj in collection.objects:
         if obj.type == "CURVE":
             obj.data.bevel_depth = self.geometry_thickness
+
+
+def update_image_overlay(self, context):
+    """Apply, update, or remove the background overlay when settings change."""
+    from .core import overlay
+
+    overlay.refresh(context)
+
+
+def update_image_overlay_appearance(self, context):
+    """Update overlay colour map / interpolation without re-reading the file."""
+    from .core import overlay
+
+    overlay.update_appearance(context)
 
 
 def parse_advanced_vis_manifest(props):
@@ -216,12 +231,30 @@ class KinoraProperties(PropertyGroup):
         name="Show Background Overlay",
         description="Display a pre-computed bitmap (e.g. density) on the ground plane",
         default=False,
+        update=update_image_overlay,
     )
 
     image_overlay_source: EnumProperty(
         name="Source",
         description="Which background image from the loaded file to display",
         items=_image_overlay_source_items,
+        update=update_image_overlay,
+    )
+
+    image_overlay_colormap: EnumProperty(
+        name="Colour Scheme",
+        description="Colour map applied to the background image values",
+        items=colormaps.COLORMAP_ITEMS,
+        default=colormaps.DEFAULT_COLORMAP,
+        update=update_image_overlay_appearance,
+    )
+
+    image_overlay_interpolation: EnumProperty(
+        name="Interpolation",
+        description="How background image pixels are interpolated on the ground plane",
+        items=colormaps.INTERPOLATION_ITEMS,
+        default=colormaps.DEFAULT_INTERPOLATION,
+        update=update_image_overlay_appearance,
     )
 
 
