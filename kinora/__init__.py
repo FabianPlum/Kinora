@@ -75,11 +75,29 @@ def update_geometry_thickness(self, context):
             obj.data.bevel_depth = self.geometry_thickness
 
 
-def update_image_overlay(self, context):
-    """Apply, update, or remove the background overlay when settings change."""
+def update_image_overlay_visibility(self, context):
+    """Show/hide the overlay and sync viewport shading to its visibility.
+
+    Enabling switches Solid/Wireframe viewports to Material Preview so the
+    emission material is actually visible (otherwise it looks like the bitmap
+    failed to load); disabling reverts Material-Preview viewports to Solid.
+    """
     from .core import overlay
 
     overlay.refresh(context)
+    if self.show_image_overlay:
+        overlay.ensure_material_preview(context)
+    else:
+        overlay.restore_solid_shading(context)
+
+
+def update_image_overlay_source(self, context):
+    """Re-apply the overlay for a newly selected source (keeps it visible)."""
+    from .core import overlay
+
+    overlay.refresh(context)
+    if self.show_image_overlay:
+        overlay.ensure_material_preview(context)
 
 
 def update_image_overlay_appearance(self, context):
@@ -231,14 +249,14 @@ class KinoraProperties(PropertyGroup):
         name="Show Background Overlay",
         description="Display a pre-computed bitmap (e.g. density) on the ground plane",
         default=False,
-        update=update_image_overlay,
+        update=update_image_overlay_visibility,
     )
 
     image_overlay_source: EnumProperty(
         name="Source",
         description="Which background image from the loaded file to display",
         items=_image_overlay_source_items,
-        update=update_image_overlay,
+        update=update_image_overlay_source,
     )
 
     image_overlay_colormap: EnumProperty(
