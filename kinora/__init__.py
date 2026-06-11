@@ -14,7 +14,7 @@ install_utils.ensure_deps_in_path(ADDON_DIR)
 bl_info = {
     "name": "Kinora - Pedestrian Data Visualiser",
     "author": "Fabian Plum & Mohcine Chraibi",
-    "version": (0, 2, 0),
+    "version": (0, 2, 1),
     "blender": (4, 0, 0),
     "location": "View3D > Sidebar > Kinora",
     "description": "Visualise Pedestrian Data trajectory files (SQLite and HDF5) with agent animations and geometry",

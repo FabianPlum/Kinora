@@ -11,7 +11,7 @@
 ## Install
 
 1. Download the latest ZIP from [Releases](https://github.com/FabianPlum/Kinora/releases).
-2. In Blender (4.0 or newer): **Edit > Preferences > Add-ons > Install...** and pick the ZIP.
+2. In [Blender](https://www.blender.org/download/) (4.0 or newer): **Edit > Preferences > Add-ons > Install...** and pick the ZIP.
 3. Tick the box next to **Kinora**.
 4. Expand the addon and click **Install Dependencies** (give it a minute or two).
 5. Restart Blender.
