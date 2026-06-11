@@ -130,7 +130,9 @@ class KINORA_PT_advanced_vis_panel(Panel):
         if not props:
             return False
         manifest = parse_advanced_vis_manifest(props)
-        return bool(manifest.get("backgrounds") or manifest.get("agent_colors"))
+        return bool(
+            manifest.get("backgrounds") or manifest.get("agent_colors") or manifest.get("polygons")
+        )
 
     def draw(self, context: Context) -> None:
         from . import parse_advanced_vis_manifest
@@ -151,14 +153,29 @@ class KINORA_PT_advanced_vis_panel(Panel):
             col.prop(props, "image_overlay_interpolation", text="Interp")
 
         if manifest.get("agent_colors"):
+            agents = bpy.data.collections.get("Kinora_Agents")
+            has_paths = bool(
+                agents and any(o.name.startswith("Path_Agent_") for o in agents.objects)
+            )
             box = layout.box()
             box.label(text="Agent Colour", icon="COLOR")
-            box.prop(props, "show_agent_colors", text="Colour by Data")
+            box.prop(props, "show_agent_colors", text="Colour Agents")
+            path_row = box.row()
+            path_row.enabled = has_paths
+            path_row.prop(props, "show_path_colors", text="Colour Paths")
             col = box.column()
-            col.enabled = props.show_agent_colors
+            col.enabled = props.show_agent_colors or (props.show_path_colors and has_paths)
             col.prop(props, "agent_color_colormap", text="Colour")
             if STREAM_STATE.get("mode") == "big":
-                box.label(text="Not available in Big Data Mode", icon="INFO")
+                box.label(text="Agent colour needs default (non-big-data) mode", icon="INFO")
+
+        if manifest.get("polygons"):
+            box = layout.box()
+            box.label(text="Voronoi Cells", icon="MOD_TRIANGULATE")
+            box.prop(props, "show_voronoi", text="Show Cells")
+            col = box.column()
+            col.enabled = props.show_voronoi
+            col.prop(props, "voronoi_colormap", text="Colour")
 
 
 class KINORA_PT_info_panel(Panel):
