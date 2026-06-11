@@ -20,7 +20,7 @@ Everything that used to live in the README but isn't strictly necessary for some
 
 - **Import (JuPedSim) SQLite or h5 files**: trajectory data and walkable area geometry.
 - **Import HDF5 files**: trajectory data and walkable area geometry.
-- **Animated agents**: each agent is an animated sphere following its trajectory.
+- **Animated agents**: each agent is an animated cylinder following its trajectory.
 - **Agent path visualisation**: each agent's complete path is created as a curve object.
 - **Path visibility toggle**: show or hide all agent path curves with a single checkbox.
 - **Geometry visualisation**: walkable area boundaries and obstacles are displayed as curves.
@@ -68,7 +68,7 @@ The **Kinora** panel will appear in the right sidebar of the 3D Viewport (press 
 
 ## What gets created
 
-- **Kinora_Agents** collection: contains animated empty objects (sphere display) for each agent.
+- **Kinora_Agents** collection: contains an animated cylinder mesh for each agent.
   - Agents automatically hide after reaching their destination.
   - Path curves for each agent showing their complete trajectory (hidden by default).
 - **Big Data Mode**: creates a single particle system driven by streamed frame updates.
@@ -79,7 +79,7 @@ The **Kinora** panel will appear in the right sidebar of the 3D Viewport (press 
 
 After loading a simulation, a **Display Options** section appears in the panel:
 
-- **Agent Scale (m)**: adjust size of agent spheres or instances.
+- **Agent Scale (m)**: adjust size of agent cylinders or instances.
 - **Geometry Thickness (m)**: adjust thickness of walkable area curves.
 - **Frame Rate**: quick access to Blender frame rate presets.
 - **Show Agent Paths**: toggle checkbox to show or hide all agent path curves.
@@ -115,7 +115,7 @@ The addon uses [PedPy](https://github.com/PedestrianDynamics/PedPy) (mainly for 
 ### Agents appear at wrong scale
 
 - JuPedSim uses meters as units. Make sure your Blender scene is set to metric units.
-- Agents are created as 1-meter diameter empty objects (sphere display) by default.
+- Agents are created as 1-meter cylinders by default.
 
 ### Loading takes too long
 
