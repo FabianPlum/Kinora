@@ -25,7 +25,29 @@ STREAM_STATE: dict[str, Any] = {
     "handler_installed": False,
     "frame_data": None,  # dict: frame_number -> list of (id, x, y) tuples (HDF5 mode)
     "visible_indices": set(),  # indices currently shown (default mode); avoids per-frame hide churn
+    "color_frame_data": None,  # dict: frame_number -> {agent_id: scalar in [0,1]} (agent colouring)
+    "agent_color_enabled": False,  # write per-agent obj.color each frame (default mode only)
 }
+
+
+def _current_data_frame(scene: bpy.types.Scene) -> int | None:
+    """Map the current Blender frame to a data frame, or None if out of range.
+
+    Mirrors the Blender-frame -> data-frame mapping used for positions so colour
+    and overlay lookups stay aligned with the streamed agents.
+    """
+    state = STREAM_STATE
+    if not state["agent_ids"]:
+        return None
+    blender_frame = scene.frame_current
+    step = state["frame_step"]
+    if step <= 1:
+        db_frame = blender_frame
+    else:
+        db_frame = state["min_frame"] + (blender_frame - scene.frame_start) * step
+    if db_frame < state["min_frame"] or db_frame > state["max_frame"]:
+        return None
+    return db_frame
 
 
 def stream_frame_handler(scene: bpy.types.Scene) -> None:
@@ -35,13 +57,8 @@ def stream_frame_handler(scene: bpy.types.Scene) -> None:
         return
     if state["db_path"] is None and state["frame_data"] is None:
         return
-    blender_frame = scene.frame_current
-    step = state["frame_step"]
-    if step <= 1:
-        db_frame = blender_frame
-    else:
-        db_frame = state["min_frame"] + (blender_frame - scene.frame_start) * step
-    if db_frame < state["min_frame"] or db_frame > state["max_frame"]:
+    db_frame = _current_data_frame(scene)
+    if db_frame is None:
         return
 
     if state["frame_data"] is not None:
@@ -80,12 +97,19 @@ def stream_frame_handler(scene: bpy.types.Scene) -> None:
     objects = state["objects"]
     visible = state["visible_indices"]
     new_visible = set()
+    colors = None
+    if state["agent_color_enabled"] and state["color_frame_data"] is not None:
+        colors = state["color_frame_data"].get(db_frame)
     for agent_id, x, y in rows:
         idx = state["id_to_index"].get(agent_id)
         if idx is None:
             continue
         obj = objects[idx]
         obj.location = (float(x), float(y), 0.5)
+        if colors is not None:
+            value = colors.get(agent_id)
+            if value is not None:
+                obj.color = (value, value, value, 1.0)
         if idx not in visible:
             obj.hide_viewport = False
             obj.hide_render = False
@@ -95,6 +119,33 @@ def stream_frame_handler(scene: bpy.types.Scene) -> None:
         obj.hide_viewport = True
         obj.hide_render = True
     state["visible_indices"] = new_visible
+
+
+def apply_agent_colors_now(scene: bpy.types.Scene) -> None:
+    """Colour all agents for the current frame without a frame change.
+
+    Used when colouring is toggled on (or first enabled at load) so the agents
+    pick up their colours immediately; ongoing playback is handled inside
+    :func:`stream_frame_handler`.  No-op outside default mode or when colouring
+    is disabled or unavailable.
+    """
+    state = STREAM_STATE
+    if not state["agent_color_enabled"] or state["color_frame_data"] is None:
+        return
+    if state["mode"] != "default":
+        return
+    db_frame = _current_data_frame(scene)
+    if db_frame is None:
+        return
+    colors = state["color_frame_data"].get(db_frame)
+    if not colors:
+        return
+    objects = state["objects"]
+    for idx, agent_id in enumerate(state["agent_ids"]):
+        value = colors.get(agent_id)
+        if value is None:
+            continue
+        objects[idx].color = (value, value, value, 1.0)
 
 
 def start_streaming(
@@ -107,10 +158,12 @@ def start_streaming(
     objects: list[bpy.types.Object] | None = None,
     object_name: str | None = None,
     frame_data: FrameData | None = None,
+    color_frame_data: dict[int, dict[int, float]] | None = None,
 ) -> None:
     """Register the frame-change handler and populate streaming state."""
     STREAM_STATE["db_path"] = db_path
     STREAM_STATE["frame_data"] = frame_data
+    STREAM_STATE["color_frame_data"] = color_frame_data
     STREAM_STATE["min_frame"] = min_frame
     STREAM_STATE["max_frame"] = max_frame
     STREAM_STATE["frame_step"] = frame_step
@@ -137,6 +190,8 @@ def clear_stream_state() -> None:
     STREAM_STATE["conn"] = None
     STREAM_STATE["cursor"] = None
     STREAM_STATE["frame_data"] = None
+    STREAM_STATE["color_frame_data"] = None
+    STREAM_STATE["agent_color_enabled"] = False
     STREAM_STATE["min_frame"] = 0
     STREAM_STATE["max_frame"] = 0
     STREAM_STATE["frame_step"] = 1

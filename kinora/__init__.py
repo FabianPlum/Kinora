@@ -75,20 +75,33 @@ def update_geometry_thickness(self, context):
             obj.data.bevel_depth = self.geometry_thickness
 
 
-def update_image_overlay_visibility(self, context):
-    """Show/hide the overlay and sync viewport shading to its visibility.
+def _sync_advanced_vis_shading(props, context):
+    """Keep viewports in Material Preview while any emission-based advanced
+    visualisation is on, reverting to Solid only when all are off.
 
-    Enabling switches Solid/Wireframe viewports to Material Preview so the
-    emission material is actually visible (otherwise it looks like the bitmap
-    failed to load); disabling reverts Material-Preview viewports to Solid.
+    The overlay, agent colours, path colours and Voronoi cells are all emission
+    materials that Solid/Wireframe shading does not show, so they share one
+    viewport-shading switch (otherwise an enabled effect looks like it failed).
     """
     from .core import overlay
 
-    overlay.refresh(context)
-    if self.show_image_overlay:
+    if (
+        props.show_image_overlay
+        or props.show_agent_colors
+        or props.show_path_colors
+        or props.show_voronoi
+    ):
         overlay.ensure_material_preview(context)
     else:
         overlay.restore_solid_shading(context)
+
+
+def update_image_overlay_visibility(self, context):
+    """Show/hide the overlay and sync viewport shading to its visibility."""
+    from .core import overlay
+
+    overlay.refresh(context)
+    _sync_advanced_vis_shading(self, context)
 
 
 def update_image_overlay_source(self, context):
@@ -107,6 +120,45 @@ def update_image_overlay_appearance(self, context):
     overlay.update_appearance(context)
 
 
+def update_agent_colors_visibility(self, context):
+    """Enable/disable per-agent colouring and sync viewport shading."""
+    from .core import agent_colors
+
+    agent_colors.refresh(context)
+    _sync_advanced_vis_shading(self, context)
+
+
+def update_agent_colors_appearance(self, context):
+    """Update the shared agent/path colour map without re-reading the file."""
+    from .core import agent_colors, path_colors
+
+    agent_colors.update_appearance(context)
+    path_colors.update_appearance(context)
+
+
+def update_path_colors_visibility(self, context):
+    """Enable/disable path-segment colouring and sync viewport shading."""
+    from .core import path_colors
+
+    path_colors.refresh(context)
+    _sync_advanced_vis_shading(self, context)
+
+
+def update_voronoi_visibility(self, context):
+    """Show/hide the Voronoi cell overlay and sync viewport shading."""
+    from .core import voronoi
+
+    voronoi.refresh(context)
+    _sync_advanced_vis_shading(self, context)
+
+
+def update_voronoi_appearance(self, context):
+    """Update the Voronoi colour map without re-reading the file."""
+    from .core import voronoi
+
+    voronoi.update_appearance(context)
+
+
 def parse_advanced_vis_manifest(props):
     """Return the parsed advanced-visualisation manifest, or an empty one.
 
@@ -114,15 +166,18 @@ def parse_advanced_vis_manifest(props):
     .blend and can be read cheaply from poll()/draw() and enum callbacks.
     """
     raw = props.adv_vis_manifest if props else ""
+    empty = {"backgrounds": [], "agent_colors": [], "polygons": []}
     if not raw:
-        return {"backgrounds": []}
+        return empty
     try:
         manifest = json.loads(raw)
     except (ValueError, TypeError):
-        return {"backgrounds": []}
+        return empty
     if not isinstance(manifest, dict):
-        return {"backgrounds": []}
+        return empty
     manifest.setdefault("backgrounds", [])
+    manifest.setdefault("agent_colors", [])
+    manifest.setdefault("polygons", [])
     return manifest
 
 
@@ -273,6 +328,51 @@ class KinoraProperties(PropertyGroup):
         items=colormaps.INTERPOLATION_ITEMS,
         default=colormaps.DEFAULT_INTERPOLATION,
         update=update_image_overlay_appearance,
+    )
+
+    show_agent_colors: BoolProperty(
+        name="Colour Agents by Data",
+        description=(
+            "Colour each agent from its per-frame position_data scalar (default playback mode only)"
+        ),
+        default=False,
+        update=update_agent_colors_visibility,
+    )
+
+    agent_color_colormap: EnumProperty(
+        name="Colour Scheme",
+        description="Colour map applied to the per-agent (and path) data values",
+        items=colormaps.COLORMAP_ITEMS,
+        default=colormaps.DEFAULT_COLORMAP,
+        update=update_agent_colors_appearance,
+    )
+
+    show_path_colors: BoolProperty(
+        name="Colour Paths by Data",
+        description=(
+            "Colour loaded path segments by the per-frame position_data scalar "
+            "(requires Load Full Paths; shares the agent colour scheme)"
+        ),
+        default=False,
+        update=update_path_colors_visibility,
+    )
+
+    show_voronoi: BoolProperty(
+        name="Show Voronoi Cells",
+        description=(
+            "Display per-frame coloured polygons (polygon_data) on a separate "
+            "Kinora_Voronoi collection"
+        ),
+        default=False,
+        update=update_voronoi_visibility,
+    )
+
+    voronoi_colormap: EnumProperty(
+        name="Colour Scheme",
+        description="Colour map applied to the Voronoi cell values",
+        items=colormaps.COLORMAP_ITEMS,
+        default=colormaps.DEFAULT_COLORMAP,
+        update=update_voronoi_appearance,
     )
 
 

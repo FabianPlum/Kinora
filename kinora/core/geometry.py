@@ -5,9 +5,66 @@ from array import array
 import bmesh
 import bpy
 
+# Default flat colour for agents when per-agent data colouring is off.  Shared by
+# the per-agent objects and the big-data particle instance, and restored by
+# ``core.agent_colors`` when colouring is disabled.
+AGENT_DEFAULT_RGBA = (0.95, 0.7, 0.1, 1.0)
+
+# Default ground-plane colour when no background overlay is loaded.  A neutral
+# grey (rather than near-white) so agents and their data colours stay legible on
+# top; sets the material's Principled base colour (Material Preview / Rendered) as
+# well as the solid-viewport colour.  The overlay restores this material when it
+# is switched off.
+GROUND_PLANE_DEFAULT_RGBA = (0.75, 0.75, 0.75, 1.0)
+
+# Geometry boundary-line colour: 75% grey towards black, dark enough to read
+# clearly against the grey ground plane.
+GEOMETRY_LINE_RGBA = (0.25, 0.25, 0.25, 1.0)
+
+# Agent path ribbon: a flat strip in the XY plane (paths are planar at z=0),
+# lifted just above the ground so it does not z-fight, carrying a per-vertex
+# colour scalar in PATH_VALUE_ATTR so segments can be data-coloured (see
+# core.path_colors).
+PATH_DEFAULT_RGBA = (0.1, 0.1, 0.1, 1.0)
+PATH_HALF_WIDTH = 0.03
+PATH_Z = 0.03
+PATH_VALUE_ATTR = "kinora_path_value"
+
+
+def _ensure_principled(material):
+    """Return *material*'s Principled BSDF, building a default node tree if absent.
+
+    Blender 5.x materials are always node-based (``use_nodes = False`` is ignored),
+    so the surface shown in Material Preview / Rendered is the Principled BSDF, not
+    the legacy ``diffuse_color``.  Rebuilds a minimal Principled→Output tree when
+    the material has a custom tree without a Principled node (e.g. an agent
+    material previously switched to a data-colour emission shader).
+    """
+    material.use_nodes = True
+    tree = material.node_tree
+    bsdf = next((n for n in tree.nodes if n.type == "BSDF_PRINCIPLED"), None)
+    if bsdf is None:
+        tree.nodes.clear()
+        output = tree.nodes.new("ShaderNodeOutputMaterial")
+        output.location = (300, 0)
+        bsdf = tree.nodes.new("ShaderNodeBsdfPrincipled")
+        tree.links.new(bsdf.outputs["BSDF"], output.inputs["Surface"])
+    return bsdf
+
+
+def set_material_color(material, rgba):
+    """Set a material's flat colour for both render and viewport.
+
+    Drives the Principled BSDF *Base Color* (Material Preview / Rendered) and the
+    legacy ``diffuse_color`` (Solid viewport) so the material reads as *rgba* in
+    every shading mode.
+    """
+    _ensure_principled(material).inputs["Base Color"].default_value = rgba
+    material.diffuse_color = rgba
+
 
 def get_or_create_material(cache, name, rgba):
-    """Get or create a simple material with a viewport color.
+    """Get or create a flat-coloured material (Principled base colour = *rgba*).
 
     *cache* is a plain dict used to avoid redundant lookups within a session.
     """
@@ -16,8 +73,7 @@ def get_or_create_material(cache, name, rgba):
     mat = bpy.data.materials.get(name)
     if mat is None:
         mat = bpy.data.materials.new(name=name)
-    mat.use_nodes = False
-    mat.diffuse_color = rgba
+    set_material_color(mat, rgba)
     cache[name] = mat
     return mat
 
@@ -90,7 +146,7 @@ def create_geometry(context, geometry, collection, mat_cache):
         # overlay can UV-map a bitmap onto the exact geometry extent.
         plane_obj["kinora_geo_bounds"] = [bounds[0], bounds[1], bounds[2], bounds[3]]
         plane_material = get_or_create_material(
-            mat_cache, "Kinora_Ground_Plane_Material", (0.85, 0.85, 0.85, 1.0)
+            mat_cache, "Kinora_Ground_Plane_Material", GROUND_PLANE_DEFAULT_RGBA
         )
         assign_material(plane_obj, plane_material)
         collection.objects.link(plane_obj)
@@ -132,7 +188,7 @@ def _create_curve_from_coords(context, name, coords, collection, mat_cache, clos
 
     curve_obj = bpy.data.objects.new(name, curve_data)
     curve_material = get_or_create_material(
-        mat_cache, "Kinora_Geometry_Material", (0.2, 0.2, 0.2, 1.0)
+        mat_cache, "Kinora_Geometry_Material", GEOMETRY_LINE_RGBA
     )
     assign_material(curve_obj, curve_material)
     collection.objects.link(curve_obj)
@@ -146,7 +202,7 @@ def _create_curve_from_coords(context, name, coords, collection, mat_cache, clos
 _shared_agent_mesh = None
 
 # Every object / datablock Kinora creates is named with one of these.
-_KINORA_COLLECTIONS = ("Kinora_Agents", "Kinora_Geometry")
+_KINORA_COLLECTIONS = ("Kinora_Agents", "Kinora_Geometry", "Kinora_Voronoi")
 _KINORA_NAME_PREFIXES = ("Agent_", "Path_Agent_", "Obstacle_", "Kinora_", "Walkable_Area_")
 
 
@@ -239,9 +295,7 @@ def create_agent(context, agent_id, collection, mat_cache):
     """Create a cylinder object for a single agent (streamed positions)."""
     mesh = _get_shared_agent_mesh()
     agent_obj = bpy.data.objects.new(f"Agent_{agent_id}", mesh)
-    agent_material = get_or_create_material(
-        mat_cache, "Kinora_Agent_Material", (0.95, 0.7, 0.1, 1.0)
-    )
+    agent_material = get_or_create_material(mat_cache, "Kinora_Agent_Material", AGENT_DEFAULT_RGBA)
     assign_material(agent_obj, agent_material)
     scale = context.scene.kinora_props.agent_scale
     agent_obj.scale = (scale, scale, scale)
@@ -253,30 +307,79 @@ def create_agent(context, agent_id, collection, mat_cache):
     agent_obj.hide_render = True
 
 
-def create_agent_path(context, agent_id, coords, collection):
-    """Create a curve representing the path of an agent."""
+def _ribbon_geometry(coords, half_width, z):
+    """Build a flat ribbon along *coords* (XY plane, height *z*).
+
+    Each path point gets a left/right vertex pair offset by *half_width*
+    perpendicular to the local direction (averaged across adjacent segments so
+    corners miter); consecutive pairs are joined by quads wound so the face
+    normal points up.  Returns ``(verts, faces)``.
+
+    Legacy curves cannot carry custom attributes (and their bevel mesh exposes
+    none either), so paths are meshes: this gives per-vertex data a place to live
+    for in-shader colouring.
+    """
+    import math
+
+    pts = [(c[0], c[1]) for c in coords]
+    n = len(pts)
+    verts = []
+    prev_perp = (0.0, 1.0)
+    for i in range(n):
+        if i == 0:
+            dx, dy = pts[1][0] - pts[0][0], pts[1][1] - pts[0][1]
+        elif i == n - 1:
+            dx, dy = pts[-1][0] - pts[-2][0], pts[-1][1] - pts[-2][1]
+        else:
+            ax, ay = pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]
+            bx, by = pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]
+            la = math.hypot(ax, ay) or 1.0
+            lb = math.hypot(bx, by) or 1.0
+            dx, dy = ax / la + bx / lb, ay / la + by / lb
+        length = math.hypot(dx, dy)
+        if length < 1e-9:
+            perp = prev_perp
+        else:
+            perp = (-dy / length, dx / length)
+            prev_perp = perp
+        px, py = pts[i]
+        ox, oy = perp[0] * half_width, perp[1] * half_width
+        verts.append((px + ox, py + oy, z))
+        verts.append((px - ox, py - oy, z))
+    faces = [(2 * i, 2 * i + 1, 2 * i + 3, 2 * i + 2) for i in range(n - 1)]
+    return verts, faces
+
+
+def create_agent_path(context, agent_id, coords, values, collection, mat_cache):
+    """Create a flat ribbon mesh for an agent's path.
+
+    *values* is a per-point colour scalar (or None); when present it is stored as
+    the per-vertex ``PATH_VALUE_ATTR`` float attribute so ``core.path_colors`` can
+    colour segments through a ColorRamp.  The ribbon shares ``Kinora_Path_Material``
+    with all other paths.
+    """
     if len(coords) < 2:
         return None
 
-    curve_data = bpy.data.curves.new(name=f"Path_Agent_{agent_id}", type="CURVE")
-    curve_data.dimensions = "3D"
-    curve_data.resolution_u = 2
+    verts, faces = _ribbon_geometry(coords, PATH_HALF_WIDTH, PATH_Z)
+    mesh = bpy.data.meshes.new(f"Path_Agent_{agent_id}")
+    mesh.from_pydata(verts, [], faces)
+    mesh.update()
 
-    spline = curve_data.splines.new("POLY")
-    spline.points.add(len(coords) - 1)
+    if values is not None:
+        attr = mesh.attributes.new(PATH_VALUE_ATTR, "FLOAT", "POINT")
+        flat = []
+        for v in values:
+            fv = 0.0 if v is None else float(v)
+            flat.extend((fv, fv))  # left + right vertex of this point
+        attr.data.foreach_set("value", flat)
 
-    for i, coord in enumerate(coords):
-        spline.points[i].co = (*coord, 1.0)
-
-    spline.use_cyclic_u = False
-
-    curve_obj = bpy.data.objects.new(f"Path_Agent_{agent_id}", curve_data)
-    collection.objects.link(curve_obj)
-
-    curve_data.bevel_depth = 0.02
-    curve_data.bevel_resolution = 2
-
-    return curve_obj
+    path_obj = bpy.data.objects.new(f"Path_Agent_{agent_id}", mesh)
+    collection.objects.link(path_obj)
+    assign_material(
+        path_obj, get_or_create_material(mat_cache, "Kinora_Path_Material", PATH_DEFAULT_RGBA)
+    )
+    return path_obj
 
 
 def create_big_data_points(context, agent_ids, agents_collection, mat_cache):
@@ -329,9 +432,7 @@ def create_big_data_points(context, agent_ids, agents_collection, mat_cache):
         )
     else:
         instance_obj.location = (0.0, 0.0, -1.0)
-    agent_material = get_or_create_material(
-        mat_cache, "Kinora_Agent_Material", (0.95, 0.7, 0.1, 1.0)
-    )
+    agent_material = get_or_create_material(mat_cache, "Kinora_Agent_Material", AGENT_DEFAULT_RGBA)
     assign_material(instance_obj, agent_material)
     scale = context.scene.kinora_props.agent_scale
     instance_obj.scale = (scale, scale, scale)
