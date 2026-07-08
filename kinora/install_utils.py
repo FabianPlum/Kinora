@@ -75,13 +75,15 @@ def _verify_no_numpy_collision(deps_dir, bundled):
 
 
 def install_dependencies(addon_dir, timeout=300):
-    """Install pedpy and its dependencies into the addon's deps directory.
+    """Install pedpy, fdsreader, and their dependencies into the addon's deps directory.
 
     The install is *constrained to Blender's own bundled numpy version*, so pip
     reuses Blender's numpy and back-tracks pedpy to a release compatible with it
     (e.g. pedpy 1.2.x on a numpy-1.x Blender, 1.5.x on a numpy-2.x Blender),
     instead of dropping a second, conflicting numpy into deps that would have to
-    override Blender's at runtime.
+    override Blender's at runtime.  fdsreader's own dependencies (numpy plus
+    pure-Python ``incremental``/``typing_extensions``) don't conflict with
+    pedpy's, so both install in the same pass.
 
     Args:
         addon_dir: Path to the addon directory (kinora)
@@ -113,7 +115,7 @@ def install_dependencies(addon_dir, timeout=300):
             with os.fdopen(fd, "w", encoding="utf-8") as fh:
                 fh.write(f"numpy=={numpy_ver}\n")
             cmd += ["--constraint", constraint_file]
-        cmd.append("pedpy")
+        cmd += ["pedpy", "fdsreader>=1.11.5"]
 
         try:
             subprocess.check_call(cmd, timeout=timeout)
@@ -166,6 +168,14 @@ def is_pedpy_installed(addon_dir):
 
     ensure_deps_in_path(addon_dir)
     return importlib.util.find_spec("pedpy") is not None
+
+
+def is_fdsreader_installed(addon_dir):
+    """Check if fdsreader is installed and importable."""
+    import importlib.util
+
+    ensure_deps_in_path(addon_dir)
+    return importlib.util.find_spec("fdsreader") is not None
 
 
 def dependencies_installed(addon_dir):

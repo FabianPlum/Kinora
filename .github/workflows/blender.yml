@@ -103,6 +103,12 @@ jobs:
           import pedpy
           print(f"[OK] pedpy {pedpy.__version__}")
 
+          if not install_utils.is_fdsreader_installed(addon_dir):
+              print("\n[FAIL] fdsreader not importable after install")
+              sys.exit(1)
+          import fdsreader
+          print(f"[OK] fdsreader {fdsreader.__version__}")
+
           # Regression guard for the dependency-collision bug: Blender's own
           # numpy must win at import time, NOT the copy under kinora/deps.
           import numpy
@@ -124,10 +130,11 @@ jobs:
           DEPS_DIR="${GITHUB_WORKSPACE}/kinora/deps"
           test -d "$DEPS_DIR" || { echo "deps directory missing: $DEPS_DIR"; exit 1; }
           test -d "$DEPS_DIR/pedpy" || { echo "pedpy not found in deps"; exit 1; }
+          test -d "$DEPS_DIR/fdsreader" || { echo "fdsreader not found in deps"; exit 1; }
           echo "deps directory contents:"
           ls -1 "$DEPS_DIR"
 
-      - name: Run add-on loading test (SQLite + HDF5 + example)
+      - name: Run add-on loading test (SQLite + HDF5 + example + FDS smoke)
         shell: bash
         run: |
           set -euxo pipefail
@@ -140,9 +147,14 @@ jobs:
             --factory-startup \
             --require-module pedpy \
             --require-module shapely \
+            --require-module fdsreader \
             --require-operator kinora.load_simulation \
             --require-operator kinora.select_file \
+            --require-operator kinora.load_fds_smoke \
+            --require-operator kinora.select_fds_file \
+            --require-operator kinora.unload_fds_smoke \
             --test-dependency-installation \
             --test-sqlite-loading \
             --test-hdf5-loading \
-            --test-example-file
+            --test-example-file \
+            --test-fds-loading

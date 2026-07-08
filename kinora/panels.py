@@ -8,7 +8,7 @@ import os
 import bpy
 from bpy.types import Context, Panel
 
-from .install_utils import is_pedpy_installed
+from .install_utils import is_fdsreader_installed, is_pedpy_installed
 
 ADDON_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -178,6 +178,121 @@ class KINORA_PT_advanced_vis_panel(Panel):
             col.prop(props, "voronoi_colormap", text="Colour")
 
 
+def _fds_sequence_estimate(manifest, quantity_name, decimation, frame_stride):
+    """Estimate voxels/frame and total sequence file count for the given settings.
+
+    Cheap: only reads counts already stored in the manifest, no file I/O.
+    """
+    quantity = next((q for q in manifest.get("quantities", []) if q["name"] == quantity_name), None)
+    if quantity is None:
+        return 0, 0
+    mesh_ids = set(quantity.get("mesh_ids", []))
+    voxels_per_frame = 0
+    for mesh in manifest.get("meshes", []):
+        if mesh["id"] not in mesh_ids:
+            continue
+        count = 1
+        for dim in mesh["dims"]:
+            count *= max(1, (dim + decimation - 1) // decimation)
+        voxels_per_frame += count
+    n_t = quantity.get("n_t", 0)
+    frame_count = (n_t + frame_stride - 1) // frame_stride if n_t else 0
+    file_count = frame_count * max(1, len(mesh_ids))
+    return voxels_per_frame, file_count
+
+
+class KINORA_PT_fds_smoke_panel(Panel):
+    """FDS fire & smoke panel, independent of the trajectory loader.
+
+    One load reads the smoke quantity (soot density) and the optional flame
+    quantity (HRRPUV) and builds a single combined volume per FDS mesh (see
+    core.smoke). Smoke opacity is physically based (Smokeview's Beer-Lambert
+    extinction), so the defaults look right without tuning.
+    """
+
+    bl_label = "FDS Fire & Smoke (Smoke3D)"
+    bl_idname = "KINORA_PT_fds_smoke_panel"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "Kinora"
+    bl_options = {"DEFAULT_CLOSED"}
+
+    def draw(self, context: Context) -> None:
+        from . import parse_fds_smoke_manifest
+
+        layout = self.layout
+        props = context.scene.kinora_props
+
+        if not is_fdsreader_installed(ADDON_DIR):
+            box = layout.box()
+            box.alert = True
+            box.label(text="fdsreader not installed!", icon="ERROR")
+            box.label(text="Go to Edit > Preferences > Add-ons")
+            box.label(text="Find 'Kinora' and install dependencies")
+            box.separator()
+            box.operator("kinora.install_dependencies", text="Install Dependencies", icon="IMPORT")
+            return
+
+        box = layout.box()
+        box.label(text="FDS Simulation", icon="FILE")
+        if props.fds_smv_file:
+            box.label(text=os.path.basename(props.fds_smv_file), icon="CHECKMARK")
+        else:
+            box.label(text="No file selected", icon="QUESTION")
+        box.operator("kinora.select_fds_file", text="Browse...", icon="FILEBROWSER")
+
+        manifest = parse_fds_smoke_manifest(props)
+        quantities = manifest.get("quantities", [])
+        if not quantities:
+            return
+
+        layout.separator()
+        box = layout.box()
+        box.label(text="Data", icon="SETTINGS")
+        box.prop(props, "fds_smoke_quantity", text="Smoke")
+        box.prop(props, "fds_fire_quantity", text="Flame")
+        box.prop(props, "fds_smoke_decimation")
+        box.prop(props, "fds_smoke_frame_stride")
+        box.prop(props, "fds_refinement", text="Refine")
+
+        voxels_per_frame, file_count = _fds_sequence_estimate(
+            manifest,
+            props.fds_smoke_quantity,
+            props.fds_smoke_decimation,
+            props.fds_smoke_frame_stride,
+        )
+        if props.fds_refinement == "UPSAMPLE":
+            voxels_per_frame *= 8
+        box.label(text=f"~{voxels_per_frame:,} voxels/frame, {file_count} files to write")
+
+        layout.separator()
+        row = layout.row()
+        row.scale_y = 1.5
+        row.operator("kinora.load_fds_smoke", text="Load Fire & Smoke", icon="IMPORT")
+
+        if props.fds_smoke_loading_in_progress:
+            box = layout.box()
+            box.label(text=props.fds_smoke_loading_message or "Loading...", icon="TIME")
+            box.prop(props, "fds_smoke_loading_progress", text="Progress", slider=True)
+            box.label(text="Press Esc to cancel", icon="CANCEL")
+
+        if props.fds_smoke_loaded:
+            layout.separator()
+            box = layout.box()
+            box.label(text="Display Options", icon="HIDE_OFF")
+            box.prop(props, "show_fds_smoke", text="Show Fire & Smoke")
+            col = box.column()
+            col.enabled = props.show_fds_smoke
+            col.prop(props, "fds_smoke_thickness")
+            col.prop(props, "fds_detail_amount")
+            col.prop(props, "fds_flame_temperature")
+            col.prop(props, "fds_flame_intensity")
+            col.prop(props, "fds_smoke_frame_offset")
+
+            layout.separator()
+            layout.operator("kinora.unload_fds_smoke", text="Unload Fire & Smoke", icon="TRASH")
+
+
 class KINORA_PT_info_panel(Panel):
     """Info panel showing loaded simulation statistics."""
 
@@ -212,6 +327,7 @@ class KINORA_PT_info_panel(Panel):
 classes = [
     KINORA_PT_main_panel,
     KINORA_PT_advanced_vis_panel,
+    KINORA_PT_fds_smoke_panel,
     KINORA_PT_info_panel,
 ]
 

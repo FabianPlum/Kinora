@@ -1,0 +1,179 @@
+"""Render the t-section demo: FDS fire & smoke and JuPedSim agents in parallel.
+
+One shared domain - the evacuating agents (softly emissive so they read
+through the haze) walk beneath the spreading, physically-based smoke layer,
+with both simulations' 300 s timelines exactly synced (1.2 s of simulation
+per video frame).
+
+Run from the repository root:
+
+    blender --background --factory-startup --python tools/render_t_section_video.py -- stills
+    blender --background --factory-startup --python tools/render_t_section_video.py -- video
+
+``stills`` renders three preview frames to check the composition; ``video``
+renders the full 250-frame MP4. Output lands in ``render_out/`` in the
+repository root.
+"""
+# ruff: noqa: E402  (sys.path must be set up before the kinora imports)
+
+import os
+import pathlib
+import sys
+import threading
+
+REPO = os.path.abspath(os.path.join(os.path.dirname(os.path.realpath(__file__)), ".."))
+sys.path.insert(0, REPO)
+
+import addon_utils
+import bmesh
+import bpy
+import mathutils
+
+addon_utils.enable("kinora", default_set=True, persistent=False)
+
+mode = sys.argv[sys.argv.index("--") + 1] if "--" in sys.argv else "stills"
+OUT = os.path.join(REPO, "render_out")
+os.makedirs(OUT, exist_ok=True)
+
+from kinora.core import geometry as geo
+from kinora.core import smoke as smoke_core
+from kinora.core.streaming import start_streaming
+from kinora.io.fds_reader import build_fire_smoke_sequence, read_smoke_quantity
+from kinora.io.sqlite_reader import read_simulation_data as read_sqlite
+
+ev = threading.Event()
+FRAMES = 250  # ~10 s video at 24 fps
+TRAJ_STEP = 12  # 3000 sqlite frames @10fps -> 1.2 s sim per blender frame
+SMOKE_STRIDE = 4  # 1001 fds steps (~0.3 s each) -> 1.2 s per file: synced timelines
+
+for name in ("Cube", "Camera", "Light"):
+    obj = bpy.data.objects.get(name)
+    if obj:
+        bpy.data.objects.remove(obj, do_unlink=True)
+
+scene = bpy.context.scene
+scene.render.engine = "BLENDER_EEVEE"  # rasterizer, no ray tracing
+scene.eevee.taa_render_samples = 64
+scene.eevee.volumetric_tile_size = "2"  # high-res froxel volume
+scene.eevee.volumetric_samples = 128
+scene.eevee.use_volumetric_shadows = True
+props = scene.kinora_props
+
+# ---------- JuPedSim trajectories (native coordinates) ----------
+db = pathlib.Path(REPO) / "kinora/examples/t_section_jupedsim/demo.sqlite"
+traj, _ = read_sqlite(db, TRAJ_STEP, False, ev)
+print("agents:", len(traj["agent_ids"]))
+mat_cache = {}
+geometry_coll = geo.get_or_create_collection("Kinora_Geometry")
+geo.create_geometry(bpy.context, traj["geometry"], geometry_coll, mat_cache)
+agents_coll = geo.get_or_create_collection("Kinora_Agents")
+props.agent_scale = 0.45
+for agent_id in traj["agent_ids"]:
+    geo.create_agent(bpy.context, agent_id, agents_coll, mat_cache)
+objects = [bpy.data.objects.get(f"Agent_{a}") for a in traj["agent_ids"]]
+for obj in objects:
+    obj.scale = (0.45, 0.45, 0.45)
+start_streaming(
+    db_path=traj["db_path"],
+    agent_ids=traj["agent_ids"],
+    min_frame=traj["min_frame"],
+    max_frame=traj["max_frame"],
+    frame_step=TRAJ_STEP,
+    mode="default",
+    objects=objects,
+    frame_data=traj.get("frame_data"),
+)
+# Softly emissive agents so they ghost through the haze and only vanish in
+# the thickest smoke - reads as "markers" through thin smoke.
+agent_mat = bpy.data.materials.get("Kinora_Agent_Material")
+if agent_mat and agent_mat.use_nodes:
+    bsdf = next(n for n in agent_mat.node_tree.nodes if n.type == "BSDF_PRINCIPLED")
+    bsdf.inputs["Emission Color"].default_value = (1.0, 0.65, 0.1, 1.0)
+    bsdf.inputs["Emission Strength"].default_value = 5.0
+
+# ---------- FDS fire & smoke (same coordinates, on top) ----------
+smv = pathlib.Path(REPO) / "kinora/examples/t_section_fds/demo.smv"
+smoke_data, _ = read_smoke_quantity(smv, "SOOT DENSITY", None, ev)
+flame_data, _ = read_smoke_quantity(smv, "HRRPUV", None, ev)
+seq_dir, mesh_ids, frame_count = build_fire_smoke_sequence(
+    smoke_data, flame_data, 1, SMOKE_STRIDE, "SMOOTH", ev
+)
+print("smoke frames:", frame_count)
+smoke_core.set_vdb_sequence(seq_dir, mesh_ids, frame_count)
+props.show_fds_smoke = True
+# Semi-transparent smoke: at full physical opacity the branch plume would
+# completely hide the agents walking through it - this is the built-in
+# thickness knob doing exactly what it is for in a combined view.
+props.fds_smoke_thickness = 0.1
+smoke_core.refresh(bpy.context)
+
+# ---------- environment ----------
+world = scene.world
+world.use_nodes = True
+bg = world.node_tree.nodes["Background"]
+bg.inputs[0].default_value = (0.45, 0.5, 0.58, 1.0)
+bg.inputs[1].default_value = 0.7
+sun_data = bpy.data.lights.new("Sun", type="SUN")
+sun_data.energy = 3.5
+sun_data.angle = 0.3
+sun = bpy.data.objects.new("Sun", sun_data)
+scene.collection.objects.link(sun)
+sun.rotation_euler = (0.75, 0.25, 0.7)
+
+fmesh = bpy.data.meshes.new("WorldFloor")
+bm = bmesh.new()
+bmesh.ops.create_grid(bm, x_segments=1, y_segments=1, size=120)
+bm.to_mesh(fmesh)
+bm.free()
+floor = bpy.data.objects.new("WorldFloor", fmesh)
+floor.location = (15, 6, -0.02)
+scene.collection.objects.link(floor)
+fmat = bpy.data.materials.new("WorldFloorMat")
+fmat.use_nodes = True
+fbsdf = fmat.node_tree.nodes["Principled BSDF"]
+fbsdf.inputs["Base Color"].default_value = (0.55, 0.55, 0.55, 1.0)
+fbsdf.inputs["Roughness"].default_value = 0.9
+fmesh.materials.append(fmat)
+
+# ---------- camera: low 3/4 view from the south-west so agents stay visible
+# beneath the ceiling smoke layer, with the fire junction in the middle ground.
+cam_data = bpy.data.cameras.new("Cam")
+cam_data.lens = 30
+cam = bpy.data.objects.new("Cam", cam_data)
+scene.collection.objects.link(cam)
+cam.location = (7.0, -17.0, 12.0)
+direction = mathutils.Vector((18.5, 9.0, 1.0)) - cam.location
+cam.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler()
+scene.camera = cam
+
+# ---------- timeline / render ----------
+scene.frame_start = 1
+scene.frame_end = FRAMES
+scene.render.fps = 24
+scene.render.resolution_x = 1280
+scene.render.resolution_y = 720
+
+if mode == "sweep":
+    scene.render.image_settings.file_format = "PNG"
+    scene.frame_set(245)
+    for th in (0.1,):
+        props.fds_smoke_thickness = th
+        scene.render.filepath = f"{OUT}/sweep_th{th}.png"
+        bpy.ops.render.render(write_still=True)
+        print("sweep", th, "done")
+elif mode == "stills":
+    scene.render.image_settings.file_format = "PNG"
+    for f in (10, 120, 245):
+        scene.frame_set(f)
+        scene.render.filepath = f"{OUT}/par_still_f{f}.png"
+        bpy.ops.render.render(write_still=True)
+        print("still", f, "done")
+else:
+    scene.render.image_settings.media_type = "VIDEO"
+    scene.render.image_settings.file_format = "FFMPEG"
+    scene.render.ffmpeg.format = "MPEG4"
+    scene.render.ffmpeg.codec = "H264"
+    scene.render.ffmpeg.constant_rate_factor = "MEDIUM"
+    scene.render.filepath = os.path.join(OUT, "kinora_t_section_fire_evac.mp4")
+    bpy.ops.render.render(animation=True)
+    print("VIDEO DONE:", scene.render.filepath)

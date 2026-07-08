@@ -27,3 +27,11 @@ Thumbs.db
 # emacs
 *~
 /kinora/deps/
+
+# fdsreader's own regeneratable cache next to the example .smv, not source data
+kinora/examples/t_section_fds/*.pickle
+kinora/examples/t_section_fds/vismap_cache.npz
+
+# Rendered output (tools/render_t_section_video.py and ad-hoc renders)
+/render_out/
+/*.mp4
