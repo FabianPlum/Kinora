@@ -34,6 +34,11 @@ def configure_sequence(obj, sequence_dir, mesh_id, frame_count, frame_offset):
     vol_data.frame_start = 1
     vol_data.frame_duration = frame_count
     vol_data.frame_offset = frame_offset
+    # Blender treats voxels below this as empty space (default 0.001) - but the
+    # density grid stores raw soot mass density, whose physically meaningful
+    # values (1e-5..1e-2 kg/m3) sit almost entirely below that default and
+    # would be clipped to nothing before the shader ever scales them.
+    vol_data.render.clipping = 1e-9
 
 
 def remove_volume_objects(mesh_ids, object_name_fn):

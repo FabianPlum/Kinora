@@ -71,35 +71,35 @@ SMOKE_NOISE_SCALE = 2.5
 def build_fire_smoke_material(
     material,
     volume_node_name,
-    thickness_node_name,
+    smoke_scale_node_name,
     detail_node_name,
     temp_node_name,
     intensity_node_name,
 ):
     """Build the combined FDS fire & smoke volume material.
 
-    Returns ``(volume, thickness, detail_range, temp_mult, intensity_mult)``
+    Returns ``(volume, smoke_scale, detail_range, temp_mult, intensity_mult)``
     nodes; the caller drives the live parameters through them.
 
-    Smoke: the ``density`` grid already holds the physical Beer-Lambert
-    extinction coefficient (1/m) Smokeview uses (see ``io.fds_reader``), so
-    ``Attribute("density") -> Multiply(thickness, default 1.0) ->
-    Principled Volume.Density`` is physically correct opacity at thickness
-    1.0. A procedural Noise Texture modulates that density by
-    ``1 ± detail_amount`` (the pyro-workflow "sub-grid detail" trick):
-    mean-preserving, so overall opacity stays put while edges break up into
-    wisps the coarse CFD grid can't carry. Static 3D noise in object space is
-    enough - the data animates through it.
+    Smoke: the ``density`` grid holds the raw soot mass density (kg/m3, see
+    ``io.fds_reader``); the *smoke_scale* Math node multiplies it by the
+    user-editable mass extinction coefficient (Beer-Lambert, Smokeview's own
+    convention) times the smoke density multiplier - the caller sets that
+    product (and 0 to hide the smoke channel entirely). A procedural Noise
+    Texture modulates the result by ``1 ± detail_amount`` (the pyro-workflow
+    "sub-grid detail" trick): mean-preserving, so overall opacity stays put
+    while edges break up into wisps the coarse CFD grid can't carry. Static
+    3D noise in object space is enough - the data animates through it.
 
     Fire: an *explicit* emission branch, deliberately NOT the Principled
     Volume's built-in blackbody (whose emission is coupled to the smoke
     density - a flame buried in optically thick soot would be invisible and
     a thin-smoke region couldn't glow). ``Attribute("temperature")`` (flame,
     normalised 0..1) x flame temperature (K) -> Blackbody node -> Emission
-    colour, with Emission strength = flame x intensity; joined to the smoke
-    via Add Shader. The Blackbody node outputs a normalised colour, so
-    intensity is an ordinary emission strength (sane values ~1-50), not a
-    1e-5 style radiometric scale.
+    colour, with Emission strength = flame x the flame density multiplier
+    (0 hides the flame channel); joined to the smoke via Add Shader. The
+    Blackbody node outputs a normalised colour, so the multiplier is an
+    ordinary emission strength (sane values ~1-50).
     """
     material.use_nodes = True
     tree = material.node_tree
@@ -123,11 +123,11 @@ def build_fire_smoke_material(
     attr.attribute_name = "density"
     attr.location = (-600, 200)
 
-    thickness = tree.nodes.new("ShaderNodeMath")
-    thickness.name = thickness_node_name
-    thickness.operation = "MULTIPLY"
-    thickness.inputs[1].default_value = 1.0
-    thickness.location = (-350, 200)
+    smoke_scale = tree.nodes.new("ShaderNodeMath")
+    smoke_scale.name = smoke_scale_node_name
+    smoke_scale.operation = "MULTIPLY"
+    smoke_scale.inputs[1].default_value = 1.0
+    smoke_scale.location = (-350, 200)
 
     texcoord = tree.nodes.new("ShaderNodeTexCoord")
     texcoord.location = (-600, 0)
@@ -152,10 +152,10 @@ def build_fire_smoke_material(
     detail_mult.operation = "MULTIPLY"
     detail_mult.location = (100, 150)
 
-    tree.links.new(attr.outputs["Fac"], thickness.inputs[0])
+    tree.links.new(attr.outputs["Fac"], smoke_scale.inputs[0])
     tree.links.new(texcoord.outputs["Object"], noise.inputs["Vector"])
     tree.links.new(noise.outputs["Fac"], detail_range.inputs["Value"])
-    tree.links.new(thickness.outputs["Value"], detail_mult.inputs[0])
+    tree.links.new(smoke_scale.outputs["Value"], detail_mult.inputs[0])
     tree.links.new(detail_range.outputs["Result"], detail_mult.inputs[1])
     tree.links.new(detail_mult.outputs["Value"], volume.inputs["Density"])
 
@@ -192,7 +192,7 @@ def build_fire_smoke_material(
     tree.links.new(volume.outputs["Volume"], add.inputs[0])
     tree.links.new(emission.outputs["Emission"], add.inputs[1])
     tree.links.new(add.outputs["Shader"], output.inputs["Volume"])
-    return volume, thickness, detail_range, temp_mult, intensity_mult
+    return volume, smoke_scale, detail_range, temp_mult, intensity_mult
 
 
 def set_detail_amount(detail_range, amount):

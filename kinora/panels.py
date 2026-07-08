@@ -245,19 +245,22 @@ class KINORA_PT_fds_smoke_panel(Panel):
         quantities = manifest.get("quantities", [])
         if not quantities:
             return
+        names = [q["name"] for q in quantities]
 
         layout.separator()
         box = layout.box()
         box.label(text="Data", icon="SETTINGS")
-        box.prop(props, "fds_smoke_quantity", text="Smoke")
-        box.prop(props, "fds_fire_quantity", text="Flame")
+        smoke_state = "found" if "SOOT DENSITY" in names else "MISSING"
+        flame_state = "found" if "HRRPUV" in names else "not in file"
+        box.label(text=f"Smoke (SOOT DENSITY): {smoke_state}")
+        box.label(text=f"Flame (HRRPUV): {flame_state}")
         box.prop(props, "fds_smoke_decimation")
         box.prop(props, "fds_smoke_frame_stride")
         box.prop(props, "fds_refinement", text="Refine")
 
         voxels_per_frame, file_count = _fds_sequence_estimate(
             manifest,
-            props.fds_smoke_quantity,
+            "SOOT DENSITY",
             props.fds_smoke_decimation,
             props.fds_smoke_frame_stride,
         )
@@ -279,16 +282,23 @@ class KINORA_PT_fds_smoke_panel(Panel):
         if props.fds_smoke_loaded:
             layout.separator()
             box = layout.box()
-            box.label(text="Display Options", icon="HIDE_OFF")
-            box.prop(props, "show_fds_smoke", text="Show Fire & Smoke")
+            box.label(text="Smoke", icon="VOLUME_DATA")
+            box.prop(props, "show_fds_smoke", text="Show Smoke")
             col = box.column()
             col.enabled = props.show_fds_smoke
-            col.prop(props, "fds_smoke_thickness")
+            col.prop(props, "fds_smoke_density_multiplier", text="Density Multiplier")
+            col.prop(props, "fds_mass_extinction")
             col.prop(props, "fds_detail_amount")
-            col.prop(props, "fds_flame_temperature")
-            col.prop(props, "fds_flame_intensity")
-            col.prop(props, "fds_smoke_frame_offset")
 
+            box = layout.box()
+            box.label(text="Flame", icon="LIGHT_SUN")
+            box.prop(props, "show_fds_fire", text="Show Flame")
+            col = box.column()
+            col.enabled = props.show_fds_fire
+            col.prop(props, "fds_fire_density_multiplier", text="Density Multiplier")
+            col.prop(props, "fds_flame_temperature")
+
+            layout.prop(props, "fds_smoke_frame_offset")
             layout.separator()
             layout.operator("kinora.unload_fds_smoke", text="Unload Fire & Smoke", icon="TRASH")
 

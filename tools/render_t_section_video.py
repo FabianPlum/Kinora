@@ -101,10 +101,11 @@ seq_dir, mesh_ids, frame_count = build_fire_smoke_sequence(
 print("smoke frames:", frame_count)
 smoke_core.set_vdb_sequence(seq_dir, mesh_ids, frame_count)
 props.show_fds_smoke = True
+props.show_fds_fire = True
 # Semi-transparent smoke: at full physical opacity the branch plume would
 # completely hide the agents walking through it - this is the built-in
-# thickness knob doing exactly what it is for in a combined view.
-props.fds_smoke_thickness = 0.1
+# density-multiplier knob doing exactly what it is for in a combined view.
+props.fds_smoke_density_multiplier = 0.1
 smoke_core.refresh(bpy.context)
 
 # ---------- environment ----------
@@ -146,6 +147,70 @@ direction = mathutils.Vector((18.5, 9.0, 1.0)) - cam.location
 cam.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler()
 scene.camera = cam
 
+# ---------- time bar overlay (parented to the camera, bottom of frame) ----------
+# The camera has a 36 mm sensor: at local distance 1 the visible half-width is
+# sensor/(2*lens) = 0.6, half-height 0.6 * 9/16 = 0.3375. Everything below is
+# placed in those camera-local units at z = -1.
+SIM_SECONDS_PER_FRAME = TRAJ_STEP / 10.0  # sqlite runs at 10 fps
+
+
+def _overlay_material(name, rgba):
+    mat = bpy.data.materials.new(name)
+    mat.use_nodes = True
+    tree = mat.node_tree
+    tree.nodes.clear()
+    out = tree.nodes.new("ShaderNodeOutputMaterial")
+    emit = tree.nodes.new("ShaderNodeEmission")
+    emit.inputs["Color"].default_value = rgba
+    tree.links.new(emit.outputs["Emission"], out.inputs["Surface"])
+    return mat
+
+
+def _overlay_plane(name, rgba):
+    mesh = bpy.data.meshes.new(name)
+    bm = bmesh.new()
+    # Unit plane spanning x 0..1, y -0.5..0.5, so scale.x grows from the left edge.
+    bmesh.ops.create_grid(bm, x_segments=1, y_segments=1, size=0.5)
+    for v in bm.verts:
+        v.co.x += 0.5
+    bm.to_mesh(mesh)
+    bm.free()
+    obj = bpy.data.objects.new(name, mesh)
+    scene.collection.objects.link(obj)
+    mesh.materials.append(_overlay_material(f"{name}_Mat", rgba))
+    obj.parent = cam
+    return obj
+
+
+BAR_W, BAR_H, BAR_Y = 1.0, 0.012, -0.30
+track = _overlay_plane("TimeBar_Track", (0.06, 0.06, 0.06, 1.0))
+track.location = (-BAR_W / 2, BAR_Y, -1.0)
+track.scale = (BAR_W, BAR_H, 1.0)
+
+fill = _overlay_plane("TimeBar_Fill", (1.0, 0.55, 0.1, 1.0))
+fill.location = (-BAR_W / 2, BAR_Y, -0.999)
+fill.scale = (0.0, BAR_H * 0.6, 1.0)
+
+time_curve = bpy.data.curves.new("TimeText", type="FONT")
+time_curve.size = 0.035
+time_text = bpy.data.objects.new("TimeText", time_curve)
+scene.collection.objects.link(time_text)
+time_text.parent = cam
+time_text.location = (-BAR_W / 2, BAR_Y + 0.02, -1.0)
+time_curve.materials.append(_overlay_material("TimeText_Mat", (0.9, 0.9, 0.9, 1.0)))
+
+
+def _update_time_overlay(scene_handle):
+    """Advance the fill bar and timestamp with the timeline (fires during render)."""
+    frac = (scene_handle.frame_current - scene_handle.frame_start) / max(1, FRAMES - 1)
+    fill.scale[0] = BAR_W * max(0.0, min(1.0, frac))
+    t = (scene_handle.frame_current - scene_handle.frame_start) * SIM_SECONDS_PER_FRAME
+    time_curve.body = f"t = {t:5.1f} s"
+
+
+bpy.app.handlers.frame_change_pre.append(_update_time_overlay)
+_update_time_overlay(scene)
+
 # ---------- timeline / render ----------
 scene.frame_start = 1
 scene.frame_end = FRAMES
@@ -153,15 +218,7 @@ scene.render.fps = 24
 scene.render.resolution_x = 1280
 scene.render.resolution_y = 720
 
-if mode == "sweep":
-    scene.render.image_settings.file_format = "PNG"
-    scene.frame_set(245)
-    for th in (0.1,):
-        props.fds_smoke_thickness = th
-        scene.render.filepath = f"{OUT}/sweep_th{th}.png"
-        bpy.ops.render.render(write_still=True)
-        print("sweep", th, "done")
-elif mode == "stills":
+if mode == "stills":
     scene.render.image_settings.file_format = "PNG"
     for f in (10, 120, 245):
         scene.frame_set(f)

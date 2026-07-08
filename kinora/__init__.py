@@ -95,6 +95,7 @@ def _sync_advanced_vis_shading(props, context):
         or props.show_path_colors
         or props.show_voronoi
         or props.show_fds_smoke
+        or props.show_fds_fire
     ):
         overlay.ensure_material_preview(context)
     else:
@@ -244,43 +245,6 @@ def _image_overlay_source_items(self, context):
     ]
     _image_overlay_enum_cache = items or [("NONE", "None", "")]
     return _image_overlay_enum_cache
-
-
-# Same GC-safety concern as _image_overlay_enum_cache above, for the FDS
-# quantity dropdown.
-_fds_smoke_quantity_enum_cache = [("NONE", "None", "")]
-
-
-def _fds_smoke_quantity_items(self, context):
-    """Build the Smoke3D quantity dropdown from the selected file's cheap-probe manifest.
-
-    Falls back to a single placeholder so the property always has a valid
-    value before any file has been probed.
-    """
-    global _fds_smoke_quantity_enum_cache
-    items = [
-        (q["name"], f"{q['name']} ({q['unit']})", f"{q['n_t']} timesteps")
-        for q in parse_fds_smoke_manifest(self).get("quantities", [])
-        if q.get("name")
-    ]
-    _fds_smoke_quantity_enum_cache = items or [("NONE", "None", "")]
-    return _fds_smoke_quantity_enum_cache
-
-
-_fds_fire_quantity_enum_cache = [("NONE", "None", "")]
-
-
-def _fds_fire_quantity_items(self, context):
-    """Flame quantity dropdown: the file's quantities plus an explicit "None" (smoke only)."""
-    global _fds_fire_quantity_enum_cache
-    items = [("NONE", "None (smoke only)", "Skip the flame/temperature grid")]
-    items += [
-        (q["name"], f"{q['name']} ({q['unit']})", f"{q['n_t']} timesteps")
-        for q in parse_fds_smoke_manifest(self).get("quantities", [])
-        if q.get("name")
-    ]
-    _fds_fire_quantity_enum_cache = items
-    return _fds_fire_quantity_enum_cache
 
 
 class KinoraProperties(PropertyGroup):
@@ -469,20 +433,6 @@ class KinoraProperties(PropertyGroup):
         options={"HIDDEN"},
     )
 
-    fds_smoke_quantity: EnumProperty(
-        name="Smoke Quantity",
-        description="Which Smoke3D quantity drives smoke opacity (normally SOOT DENSITY)",
-        items=_fds_smoke_quantity_items,
-    )
-
-    fds_fire_quantity: EnumProperty(
-        name="Flame Quantity",
-        description=(
-            "Which Smoke3D quantity drives the flame (normally HRRPUV); None loads smoke only"
-        ),
-        items=_fds_fire_quantity_items,
-    )
-
     fds_smoke_decimation: IntProperty(
         name="Spatial Decimation",
         description=(
@@ -526,8 +476,15 @@ class KinoraProperties(PropertyGroup):
         default="SMOOTH",
     )
 
-    fds_smoke_thickness: FloatProperty(
-        name="Smoke Thickness",
+    show_fds_smoke: BoolProperty(
+        name="Show Smoke",
+        description="Display the smoke (soot density) channel",
+        default=True,
+        update=update_fds_smoke_visibility,
+    )
+
+    fds_smoke_density_multiplier: FloatProperty(
+        name="Smoke Density Multiplier",
         description=(
             "Multiplier on the physically-based smoke opacity "
             "(1.0 = Smokeview-accurate Beer-Lambert extinction)"
@@ -535,6 +492,18 @@ class KinoraProperties(PropertyGroup):
         default=1.0,
         min=0.0,
         soft_max=5.0,
+        update=update_fds_smoke_appearance,
+    )
+
+    fds_mass_extinction: FloatProperty(
+        name="Mass Extinction (m²/kg)",
+        description=(
+            "Soot mass extinction coefficient for the Beer-Lambert smoke opacity; "
+            "FDS's default MASS_EXTINCTION_COEFFICIENT is 8700 m²/kg"
+        ),
+        default=8700.0,
+        min=1.0,
+        soft_max=20000.0,
         update=update_fds_smoke_appearance,
     )
 
@@ -549,21 +518,28 @@ class KinoraProperties(PropertyGroup):
         update=update_fds_smoke_appearance,
     )
 
+    show_fds_fire: BoolProperty(
+        name="Show Flame",
+        description="Display the flame (HRRPUV) channel",
+        default=True,
+        update=update_fds_smoke_visibility,
+    )
+
+    fds_fire_density_multiplier: FloatProperty(
+        name="Flame Density Multiplier",
+        description="Multiplier on the flame's blackbody emission strength",
+        default=5.0,
+        min=0.0,
+        soft_max=50.0,
+        update=update_fds_smoke_appearance,
+    )
+
     fds_flame_temperature: FloatProperty(
         name="Flame Temperature (K)",
         description="Blackbody temperature at full flame value (bright yellow-white core)",
         default=4200.0,
         min=300.0,
         max=6000.0,
-        update=update_fds_smoke_appearance,
-    )
-
-    fds_flame_intensity: FloatProperty(
-        name="Flame Intensity",
-        description="Emission strength of the flame glow (0 hides the flame)",
-        default=5.0,
-        min=0.0,
-        soft_max=50.0,
         update=update_fds_smoke_appearance,
     )
 
@@ -575,13 +551,6 @@ class KinoraProperties(PropertyGroup):
         ),
         default=0,
         update=update_fds_smoke_appearance,
-    )
-
-    show_fds_smoke: BoolProperty(
-        name="Show Fire & Smoke",
-        description="Display the loaded FDS fire & smoke volume",
-        default=True,
-        update=update_fds_smoke_visibility,
     )
 
     fds_smoke_loading_in_progress: BoolProperty(

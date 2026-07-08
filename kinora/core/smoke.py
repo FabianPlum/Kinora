@@ -2,18 +2,18 @@
 
 Each selected (temporally-strided) FDS timestep is written as one multi-grid
 ``.vdb`` file (see ``io.fds_reader.build_fire_smoke_sequence``): a ``density``
-grid carrying Smokeview's Beer-Lambert extinction coefficient (soot density x
-8700 m2/kg) and an optional ``temperature`` grid carrying the normalised flame
-quantity (typically HRRPUV). One Blender Volume object per FDS mesh holds
-both grids, so a single stock-Principled-Volume material renders smoke and
-blackbody fire together - and the flame correctly illuminates its own smoke
-(separate overlapping volume objects would double-scatter instead).
+grid carrying the raw soot mass density and an optional ``temperature`` grid
+carrying the normalised HRRPUV flame. One Blender Volume object per FDS mesh
+holds both grids, so a single material renders smoke and blackbody fire
+together - and the flame correctly illuminates its own smoke (separate
+overlapping volume objects would double-scatter instead).
 
 Blender's native Volume ``is_sequence`` playback - the same mechanism real
 fluid-simulation caches use - handles animation on its own; no custom
-frame-change handler. Appearance parameters (smoke thickness, detail noise,
-flame temperature/intensity) are live shader inputs, never baked into the
-files, so retuning them costs nothing.
+frame-change handler. Appearance parameters (the Beer-Lambert mass extinction
+coefficient, per-channel show toggles and density multipliers, detail noise,
+flame temperature) are live shader inputs, never baked into the files, so
+retuning them costs nothing.
 """
 
 import bpy
@@ -25,7 +25,7 @@ SMOKE_COLLECTION = "Kinora_Smoke"
 SMOKE_OBJECT_PREFIX = "Kinora_Smoke_"
 SMOKE_MATERIAL_NAME = "Kinora_Smoke_Material"
 SMOKE_VOLUME_NODE = "Kinora_Smoke_Volume"
-SMOKE_THICKNESS_NODE = "Kinora_Smoke_Thickness"
+SMOKE_SCALE_NODE = "Kinora_Smoke_Scale"
 SMOKE_DETAIL_NODE = "Kinora_Smoke_Detail"
 FLAME_TEMP_NODE = "Kinora_Flame_Temperature"
 FLAME_INTENSITY_NODE = "Kinora_Flame_Intensity"
@@ -59,23 +59,34 @@ def _build_material(props):
     material = bpy.data.materials.get(SMOKE_MATERIAL_NAME)
     if material is None:
         material = bpy.data.materials.new(SMOKE_MATERIAL_NAME)
-    _volume, thickness, detail_range, temp_mult, intensity_mult = shading.build_fire_smoke_material(
-        material,
-        SMOKE_VOLUME_NODE,
-        SMOKE_THICKNESS_NODE,
-        SMOKE_DETAIL_NODE,
-        FLAME_TEMP_NODE,
-        FLAME_INTENSITY_NODE,
+    _volume, smoke_scale, detail_range, temp_mult, intensity_mult = (
+        shading.build_fire_smoke_material(
+            material,
+            SMOKE_VOLUME_NODE,
+            SMOKE_SCALE_NODE,
+            SMOKE_DETAIL_NODE,
+            FLAME_TEMP_NODE,
+            FLAME_INTENSITY_NODE,
+        )
     )
-    _apply_appearance(props, thickness, detail_range, temp_mult, intensity_mult)
+    _apply_appearance(props, smoke_scale, detail_range, temp_mult, intensity_mult)
     return material
 
 
-def _apply_appearance(props, thickness, detail_range, temp_mult, intensity_mult):
-    thickness.inputs[1].default_value = props.fds_smoke_thickness
+def _apply_appearance(props, smoke_scale, detail_range, temp_mult, intensity_mult):
+    # The density grid is baked at the reference mass extinction coefficient
+    # (see io.fds_reader.SOOT_MASS_EXTINCTION), so the live shader factor is
+    # the ratio of the user's coefficient to the reference, times the artistic
+    # multiplier. A disabled channel is just its multiplier forced to 0 - both
+    # channels live in one volume object, so per-channel visibility is
+    # shader-side, not object-side.
+    km_ratio = props.fds_mass_extinction / fds_reader.SOOT_MASS_EXTINCTION
+    smoke = km_ratio * props.fds_smoke_density_multiplier
+    smoke_scale.inputs[1].default_value = smoke if props.show_fds_smoke else 0.0
     shading.set_detail_amount(detail_range, props.fds_detail_amount)
     temp_mult.inputs[1].default_value = props.fds_flame_temperature
-    intensity_mult.inputs[1].default_value = props.fds_flame_intensity
+    flame = props.fds_fire_density_multiplier
+    intensity_mult.inputs[1].default_value = flame if props.show_fds_fire else 0.0
 
 
 def _hide_all():
@@ -89,12 +100,15 @@ def _hide_all():
 def refresh(context):
     """Show/hide and (re)configure the volume(s) according to current properties.
 
-    Safe to call any time: no sequence loaded, or the toggle off, simply hides
-    the volume objects. The sequence itself is immutable once written; only
-    the material and each Volume's playback alignment are (re)applied.
+    Safe to call any time: no sequence loaded, or both channels toggled off,
+    simply hides the volume objects (the per-channel toggles themselves act on
+    the shader, see :func:`_apply_appearance`). The sequence is immutable once
+    written; only the material and each Volume's playback alignment are
+    (re)applied.
     """
     props = context.scene.kinora_props
-    if not props.show_fds_smoke or not _STATE["mesh_ids"]:
+    any_channel = props.show_fds_smoke or props.show_fds_fire
+    if not any_channel or not _STATE["mesh_ids"]:
         _STATE["active"] = False
         _hide_all()
         return
@@ -118,7 +132,9 @@ def refresh(context):
 
 
 def update_appearance(context):
-    """Live thickness/detail/flame-temperature/flame-intensity/frame-offset update.
+    """Live update of the shader/playback parameters (extinction coefficient,
+    per-channel toggles and density multipliers, detail, flame temperature,
+    frame offset).
 
     All of these are shader (or simple Volume datablock) parameters, not data
     baked into the sequence files, so this never re-reads or rewrites anything.
@@ -128,12 +144,12 @@ def update_appearance(context):
     material = bpy.data.materials.get(SMOKE_MATERIAL_NAME)
     if material is not None and material.use_nodes:
         nodes = material.node_tree.nodes
-        thickness = nodes.get(SMOKE_THICKNESS_NODE)
+        smoke_scale = nodes.get(SMOKE_SCALE_NODE)
         detail_range = nodes.get(SMOKE_DETAIL_NODE)
         temp_mult = nodes.get(FLAME_TEMP_NODE)
         intensity_mult = nodes.get(FLAME_INTENSITY_NODE)
-        if None not in (thickness, detail_range, temp_mult, intensity_mult):
-            _apply_appearance(props, thickness, detail_range, temp_mult, intensity_mult)
+        if None not in (smoke_scale, detail_range, temp_mult, intensity_mult):
+            _apply_appearance(props, smoke_scale, detail_range, temp_mult, intensity_mult)
 
     for mesh_id in _STATE["mesh_ids"] or []:
         obj = bpy.data.objects.get(_object_name(mesh_id))

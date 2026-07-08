@@ -25,14 +25,15 @@ from bpy_extras.io_utils import ImportHelper
 
 from . import install_utils
 from .core import smoke as smoke_core
-from .io.fds_reader import build_fire_smoke_sequence, probe_fds_simulation, read_smoke_quantity
+from .io.fds_reader import (
+    FLAME_QUANTITY,
+    SMOKE_QUANTITY,
+    build_fire_smoke_sequence,
+    probe_fds_simulation,
+    read_smoke_quantity,
+)
 
 ADDON_DIR = os.path.dirname(os.path.realpath(__file__))
-
-# Preferred default quantities, by FDS/Smokeview convention: SOOT DENSITY is
-# the smoke visualisation quantity, HRRPUV the flame envelope.
-_SMOKE_QUANTITY_DEFAULT = "SOOT DENSITY"
-_FLAME_QUANTITY_DEFAULT = "HRRPUV"
 
 
 def check_fds_dependencies() -> tuple[bool, str | None]:
@@ -76,18 +77,22 @@ class KINORA_OT_select_fds_file(Operator, ImportHelper):
             self.report({"ERROR"}, "Failed to read FDS simulation")
             return {"CANCELLED"}
 
+        names = [q["name"] for q in manifest.get("quantities", [])]
+        if SMOKE_QUANTITY not in names:
+            self.report(
+                {"ERROR"},
+                f"No '{SMOKE_QUANTITY}' Smoke3D output in {path.name} - "
+                "enable smoke output in the FDS input file",
+            )
+            return {"CANCELLED"}
+
         props = context.scene.kinora_props
         props.fds_smv_file = self.filepath
         props.fds_smoke_manifest = json.dumps(manifest)
-        names = [q["name"] for q in manifest.get("quantities", [])]
-        if names:
-            props.fds_smoke_quantity = (
-                _SMOKE_QUANTITY_DEFAULT if _SMOKE_QUANTITY_DEFAULT in names else names[0]
-            )
-            props.fds_fire_quantity = (
-                _FLAME_QUANTITY_DEFAULT if _FLAME_QUANTITY_DEFAULT in names else "NONE"
-            )
-        self.report({"INFO"}, f"Found {len(names)} Smoke3D quantities in {path.name}")
+        flame_note = (
+            "with flame (HRRPUV)" if FLAME_QUANTITY in names else "smoke only (no HRRPUV output)"
+        )
+        self.report({"INFO"}, f"Selected {path.name}: {flame_note}")
         return {"FINISHED"}
 
 
@@ -129,25 +134,27 @@ class KINORA_OT_load_fds_smoke(Operator):
             self.report({"ERROR"}, f"File not found: {path}")
             return {"CANCELLED"}
 
-        smoke_quantity = props.fds_smoke_quantity
-        if not smoke_quantity or smoke_quantity == "NONE":
-            self.report({"ERROR"}, "No smoke quantity selected")
+        # Fixed quantities by FDS/Smokeview convention: smoke is soot density,
+        # flame is HRRPUV (skipped automatically when the file lacks it).
+        from . import parse_fds_smoke_manifest
+
+        names = [q["name"] for q in parse_fds_smoke_manifest(props).get("quantities", [])]
+        if SMOKE_QUANTITY not in names:
+            self.report({"ERROR"}, f"No '{SMOKE_QUANTITY}' Smoke3D output in the selected file")
             return {"CANCELLED"}
-        flame_quantity = props.fds_fire_quantity
-        if flame_quantity == "NONE":
-            flame_quantity = None
+        flame_quantity = FLAME_QUANTITY if FLAME_QUANTITY in names else None
 
         self._reset_state()
         self._cancel_event = threading.Event()
         props.fds_smoke_loading_in_progress = True
         props.fds_smoke_loading_progress = 0.0
-        props.fds_smoke_loading_message = f"Decoding '{smoke_quantity}'..."
+        props.fds_smoke_loading_message = f"Decoding '{SMOKE_QUANTITY}'..."
 
         self._worker_thread = threading.Thread(
             target=self._run_worker,
             args=(
                 path,
-                smoke_quantity,
+                SMOKE_QUANTITY,
                 flame_quantity,
                 int(props.fds_smoke_decimation),
                 int(props.fds_smoke_frame_stride),

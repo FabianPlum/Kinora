@@ -476,7 +476,9 @@ def _test_fds_loading(addon_name, repo_root):
     assert frame_count > 0, "no sequence frames written"
 
     # The written files must carry both standard Blender grids, and the density
-    # grid must hold the Beer-Lambert extinction (soot density x 8700 1/m).
+    # grid must hold the Beer-Lambert extinction at the REFERENCE coefficient
+    # (soot density x 8700 1/m); the user's coefficient is applied live in the
+    # shader as a ratio against that reference.
     import numpy as np
     import openvdb
 
@@ -495,8 +497,8 @@ def _test_fds_loading(addon_name, repo_root):
         0.05 * soot_vmax * SOOT_MASS_EXTINCTION
         < arr.max()
         <= soot_vmax * SOOT_MASS_EXTINCTION * 1.01
-    ), f"density grid max {arr.max():.2f} not consistent with extinction scaling"
-    print(f"✓ Multi-grid VDB verified: {grid_names}, extinction max {arr.max():.1f} 1/m")
+    ), f"density grid max {arr.max():.2f} not consistent with reference extinction scaling"
+    print(f"✓ Multi-grid VDB verified: {grid_names}, reference extinction max {arr.max():.1f} 1/m")
 
     smoke_core.set_vdb_sequence(sequence_dir, mesh_ids, frame_count)
     props = bpy.context.scene.kinora_props

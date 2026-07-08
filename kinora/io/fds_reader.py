@@ -25,11 +25,23 @@ import numpy as np
 # opacity via the Beer-Lambert law with extinction K = Km * rho_soot, Km = 8700
 # (see firemodels/fds#5118 and the FDS User's Guide). Blender's Principled
 # Volume "Density" input is likewise an extinction coefficient in 1/m when the
-# scene unit is metres, so baking rho_soot * Km into the density grid
-# reproduces Smokeview's physically-based opacity with no user tuning.
+# scene unit is metres. The density grid is baked at this *reference*
+# coefficient; the shader multiplies by the live ratio Km_user / Km_reference
+# (see core.smoke), so the user-editable coefficient never requires rewriting
+# the sequence. Baking at the reference (values ~0-30 1/m) rather than storing
+# raw soot density (~1e-5..1e-2 kg/m3) matters: Blender's volume attribute
+# sampling loses very small absolute grid values (verified empirically - a
+# constant 0.003 grid renders as empty at any shader multiplier and any
+# clipping/precision setting, while the same optical depth baked as 26 x 0.1
+# renders correctly).
 SOOT_MASS_EXTINCTION = 8700.0
 
-# Fraction of the smoke extinction carved away where the flame is at full
+# The Smoke3D quantities this addon consumes, by FDS/Smokeview convention:
+# soot density drives the smoke opacity, HRRPUV the flame envelope.
+SMOKE_QUANTITY = "SOOT DENSITY"
+FLAME_QUANTITY = "HRRPUV"
+
+# Fraction of the smoke density carved away where the flame is at full
 # strength. In the combustion zone the mixture is burning gas, not settled
 # soot, and with the physically-thick Beer-Lambert extinction the flame would
 # otherwise be completely buried inside its own opaque plume - the standard
@@ -39,9 +51,10 @@ FLAME_SMOKE_CARVE = 0.75
 # Grid names written into every .vdb file. These are Blender's *standard*
 # volume grid names (the same ones Blender's own fluid sims write and the
 # Principled Volume shader's Density/Temperature Attribute inputs default to):
-# "density" carries the smoke extinction coefficient (1/m), "temperature" the
-# flame value normalised to 0..1 (multiplied by the shader's Kelvin
-# Temperature socket for blackbody fire emission).
+# "density" carries the Beer-Lambert extinction coefficient (1/m) at the
+# reference mass extinction coefficient, "temperature" the flame value
+# normalised to 0..1 (multiplied by the shader's Kelvin Temperature socket for
+# blackbody fire emission).
 VDB_DENSITY_GRID_NAME = "density"
 VDB_TEMPERATURE_GRID_NAME = "temperature"
 
@@ -272,12 +285,15 @@ def build_fire_smoke_sequence(
 ) -> tuple[str, list[str], int] | None:
     """Write one multi-grid ``.vdb`` file per selected timestep, per submesh.
 
-    Each file carries Blender's standard volume grids so the stock Principled
-    Volume shader works with near-default settings:
+    Each file carries Blender's standard volume grids:
 
-    - ``density``: soot mass density x :data:`SOOT_MASS_EXTINCTION` - i.e. the
-      Beer-Lambert extinction coefficient (1/m) Smokeview itself uses for
-      smoke opacity. Physically correct out of the box, no normalisation knob.
+    - ``density``: soot mass density x :data:`SOOT_MASS_EXTINCTION` - the
+      Beer-Lambert extinction coefficient (1/m) at the *reference* mass
+      extinction coefficient, exactly what Smokeview uses for smoke opacity.
+      The shader applies the live ratio (user coefficient / reference), so
+      changing the coefficient never requires a rebake; see the
+      :data:`SOOT_MASS_EXTINCTION` comment for why the reference scale is
+      baked rather than raw density.
     - ``temperature``: the flame quantity (typically HRRPUV) normalised 0..1
       by its whole-series maximum; the shader's Kelvin Temperature socket
       scales it into blackbody fire emission. Omitted when *flame_data* is
