@@ -1,6 +1,0 @@
-demo_1_1.sf  0 1.08935e-18 ! ext_coef_C
-demo_1_2.sf  0 9.37992e-23 ! X_CO
-demo_1_3.sf  0 0.000386412 ! X_CO2
-demo_1_4.sf  0 0.207559 ! X_O2
-demo_1_5.sf  0 1.29623e-23 ! X_HCN
-demo_1_6.sf  0 30 ! VIS_C
