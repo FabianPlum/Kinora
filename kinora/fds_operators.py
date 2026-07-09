@@ -156,8 +156,6 @@ class KINORA_OT_load_fds_smoke(Operator):
                 path,
                 SMOKE_QUANTITY,
                 flame_quantity,
-                int(props.fds_smoke_decimation),
-                int(props.fds_smoke_frame_stride),
                 props.fds_refinement,
                 self._cancel_event,
             ),
@@ -203,8 +201,8 @@ class KINORA_OT_load_fds_smoke(Operator):
         props.fds_smoke_loading_message = "Configuring volume..."
         props.fds_smoke_loading_progress = 95.0
 
-        sequence_dir, mesh_ids, frame_count = self._worker_result
-        smoke_core.set_vdb_sequence(sequence_dir, mesh_ids, frame_count)
+        sequence_dir, mesh_ids, frame_count, file_times = self._worker_result
+        smoke_core.set_vdb_sequence(sequence_dir, mesh_ids, frame_count, file_times)
         props.show_fds_smoke = True
         smoke_core.refresh(context)
 
@@ -245,8 +243,6 @@ class KINORA_OT_load_fds_smoke(Operator):
         path: pathlib.Path,
         smoke_quantity: str,
         flame_quantity: str | None,
-        decimation: int,
-        frame_stride: int,
         refinement: str,
         cancel_event: threading.Event,
     ) -> None:
@@ -263,7 +259,7 @@ class KINORA_OT_load_fds_smoke(Operator):
                     self._worker_done = True
                     return
             self._worker_result = build_fire_smoke_sequence(
-                smoke_data, flame_data, decimation, frame_stride, refinement, cancel_event
+                smoke_data, flame_data, refinement, cancel_event
             )
             self._worker_done = True
         except Exception as e:

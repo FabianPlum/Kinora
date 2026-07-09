@@ -468,12 +468,14 @@ def _test_fds_loading(addon_name, repo_root):
 
     from kinora.core import smoke as smoke_core
 
-    result = build_fire_smoke_sequence(smoke_data, flame_data, 2, 200, "SMOOTH", cancel_event)
+    result = build_fire_smoke_sequence(smoke_data, flame_data, "SMOOTH", cancel_event)
     assert result is not None, "build_fire_smoke_sequence returned None (cancelled?)"
-    sequence_dir, mesh_ids, frame_count = result
+    sequence_dir, mesh_ids, frame_count, file_times = result
     assert os.path.isdir(sequence_dir), "sequence directory not created"
     assert mesh_ids == [s["mesh_id"] for s in smoke_data["submeshes"]], "mesh_ids mismatch"
     assert frame_count > 0, "no sequence frames written"
+    assert len(file_times) == frame_count, "one FDS time per sequence file expected"
+    assert file_times == sorted(file_times), "file times must ascend"
 
     # The written files must carry both standard Blender grids, and the density
     # grid must hold the Beer-Lambert extinction at the REFERENCE coefficient
@@ -500,7 +502,7 @@ def _test_fds_loading(addon_name, repo_root):
     ), f"density grid max {arr.max():.2f} not consistent with reference extinction scaling"
     print(f"✓ Multi-grid VDB verified: {grid_names}, reference extinction max {arr.max():.1f} 1/m")
 
-    smoke_core.set_vdb_sequence(sequence_dir, mesh_ids, frame_count)
+    smoke_core.set_vdb_sequence(sequence_dir, mesh_ids, frame_count, file_times)
     props = bpy.context.scene.kinora_props
     props.show_fds_smoke = True
     smoke_core.refresh(bpy.context)
@@ -522,8 +524,8 @@ def _test_fds_loading(addon_name, repo_root):
     print(f"✓ Built {obj.name} as a {frame_count}-frame combined fire & smoke sequence")
 
     # Smoke-only path (no flame grid).
-    result2 = build_fire_smoke_sequence(smoke_data, None, 2, 500, "OFF", cancel_event)
-    seq2_dir, mesh_ids2, _fc2 = result2
+    result2 = build_fire_smoke_sequence(smoke_data, None, "OFF", cancel_event)
+    seq2_dir, mesh_ids2, _fc2, _times2 = result2
     grids2, _ = openvdb.readAll(os.path.join(seq2_dir, f"{mesh_ids2[0]}_0001.vdb"))
     assert [g.name for g in grids2] == ["density"], "smoke-only file should have density only"
     from kinora.io.fds_reader import cleanup_vdb_sequence

@@ -433,30 +433,6 @@ class KinoraProperties(PropertyGroup):
         options={"HIDDEN"},
     )
 
-    fds_smoke_decimation: IntProperty(
-        name="Spatial Decimation",
-        description=(
-            "Keep every Nth grid cell per axis when writing the volume sequence "
-            "(higher = coarser voxels, faster, smaller files)"
-        ),
-        default=1,
-        min=1,
-        max=64,
-        soft_max=16,
-    )
-
-    fds_smoke_frame_stride: IntProperty(
-        name="Frame Stride",
-        description=(
-            "Write every Nth FDS timestep as one sequence frame (higher = fewer frames, "
-            "faster load, less disk use, choppier playback)"
-        ),
-        default=5,
-        min=1,
-        max=1000,
-        soft_max=50,
-    )
-
     fds_refinement: EnumProperty(
         name="Refinement",
         description="Smoothing applied to the coarse CFD grid when writing the sequence",
@@ -527,18 +503,24 @@ class KinoraProperties(PropertyGroup):
 
     fds_fire_density_multiplier: FloatProperty(
         name="Flame Density Multiplier",
-        description="Multiplier on the flame's blackbody emission strength",
-        default=5.0,
+        description=(
+            "Multiplier on the flame's blackbody emission strength (1.0 = default brightness)"
+        ),
+        default=1.0,
         min=0.0,
-        soft_max=50.0,
+        soft_max=10.0,
         update=update_fds_smoke_appearance,
     )
 
     fds_flame_temperature: FloatProperty(
-        name="Flame Temperature (K)",
-        description="Blackbody temperature at full flame value (bright yellow-white core)",
+        name="Flame Colour Temp (K)",
+        description=(
+            "Blackbody colour temperature of the flame's brightest core - a visual "
+            "control, not an FDS quantity (HRRPUV is a heat-release density, not a "
+            "temperature). Lower = deep orange, higher = yellow-white"
+        ),
         default=4200.0,
-        min=300.0,
+        min=1200.0,
         max=6000.0,
         update=update_fds_smoke_appearance,
     )

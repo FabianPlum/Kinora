@@ -7,8 +7,8 @@ per video frame).
 
 Run from the repository root:
 
-    blender --background --factory-startup --python tools/render_t_section_video.py -- stills
-    blender --background --factory-startup --python tools/render_t_section_video.py -- video
+    blender --background --factory-startup --python tools/render_t_junction_video.py -- stills
+    blender --background --factory-startup --python tools/render_t_junction_video.py -- video
 
 ``stills`` renders three preview frames to check the composition; ``video``
 renders the full 250-frame MP4. Output lands in ``render_out/`` in the
@@ -44,7 +44,8 @@ from kinora.io.sqlite_reader import read_simulation_data as read_sqlite
 ev = threading.Event()
 FRAMES = 250  # ~10 s video at 24 fps
 TRAJ_STEP = 12  # 3000 sqlite frames @10fps -> 1.2 s sim per blender frame
-SMOKE_STRIDE = 4  # 1001 fds steps (~0.3 s each) -> 1.2 s per file: synced timelines
+# The smoke sequence holds every FDS timestep; core.smoke's sync handler
+# retimes it to the trajectory clock per frame, so no stride matching needed.
 
 for name in ("Cube", "Camera", "Light"):
     obj = bpy.data.objects.get(name)
@@ -82,6 +83,7 @@ start_streaming(
     mode="default",
     objects=objects,
     frame_data=traj.get("frame_data"),
+    fps=traj.get("fps"),
 )
 # Softly emissive agents so they ghost through the haze and only vanish in
 # the thickest smoke - reads as "markers" through thin smoke.
@@ -95,11 +97,11 @@ if agent_mat and agent_mat.use_nodes:
 smv = pathlib.Path(REPO) / "kinora/examples/t_junction.smv"
 smoke_data, _ = read_smoke_quantity(smv, "SOOT DENSITY", None, ev)
 flame_data, _ = read_smoke_quantity(smv, "HRRPUV", None, ev)
-seq_dir, mesh_ids, frame_count = build_fire_smoke_sequence(
-    smoke_data, flame_data, 1, SMOKE_STRIDE, "SMOOTH", ev
+seq_dir, mesh_ids, frame_count, file_times = build_fire_smoke_sequence(
+    smoke_data, flame_data, "SMOOTH", ev
 )
 print("smoke frames:", frame_count)
-smoke_core.set_vdb_sequence(seq_dir, mesh_ids, frame_count)
+smoke_core.set_vdb_sequence(seq_dir, mesh_ids, frame_count, file_times)
 props.show_fds_smoke = True
 props.show_fds_fire = True
 # Semi-transparent smoke: at full physical opacity the branch plume would

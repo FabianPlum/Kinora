@@ -67,6 +67,20 @@ SMOKE_ANISOTROPY = 0.2
 # metre in object space): ~0.4 m wisps suit building-scale FDS domains.
 SMOKE_NOISE_SCALE = 2.5
 
+# Blackbody temperature (K) at the *bottom* of the flame ramp. Without a floor,
+# temperature = flame x peak maps most of the visible flame volume (HRRPUV
+# values 0.1-0.4 of the series max) to 400-1700 K deep red regardless of the
+# peak setting - which made the flame-colour slider appear to do nothing. With
+# the floor, any visible flame glows at least dull orange and the slider
+# genuinely sweeps the core colour.
+FLAME_TEMP_FLOOR = 1100.0
+
+# Internal emission gain so the flame density multiplier's default of 1.0
+# gives a clearly visible flame (calibrated by render in the demo scene). The
+# flame^2 emission weighting below concentrates light in the core but dims the
+# integral; this compensates without forcing users onto large slider values.
+FLAME_EMISSION_GAIN = 30.0
+
 
 def build_fire_smoke_material(
     material,
@@ -95,11 +109,12 @@ def build_fire_smoke_material(
     Volume's built-in blackbody (whose emission is coupled to the smoke
     density - a flame buried in optically thick soot would be invisible and
     a thin-smoke region couldn't glow). ``Attribute("temperature")`` (flame,
-    normalised 0..1) x flame temperature (K) -> Blackbody node -> Emission
-    colour, with Emission strength = flame x the flame density multiplier
-    (0 hides the flame channel); joined to the smoke via Add Shader. The
-    Blackbody node outputs a normalised colour, so the multiplier is an
-    ordinary emission strength (sane values ~1-50).
+    normalised 0..1) is remapped to :data:`FLAME_TEMP_FLOOR`..peak Kelvin
+    (peak = the user's flame colour temperature) -> Blackbody node ->
+    Emission colour, with Emission strength = flame x the flame density
+    multiplier (0 hides the flame channel); joined to the smoke via Add
+    Shader. The Blackbody node outputs a normalised colour, so the
+    multiplier is an ordinary emission strength (sane values ~1-50).
     """
     material.use_nodes = True
     tree = material.node_tree
@@ -165,14 +180,28 @@ def build_fire_smoke_material(
     attr_flame.attribute_name = "temperature"
     attr_flame.location = (-600, -300)
 
-    temp_mult = tree.nodes.new("ShaderNodeMath")
+    # flame 0..1 -> FLAME_TEMP_FLOOR..peak Kelvin (peak = the user's flame
+    # colour temperature, set by the caller on "To Max").
+    temp_mult = tree.nodes.new("ShaderNodeMapRange")
     temp_mult.name = temp_node_name
-    temp_mult.operation = "MULTIPLY"
-    temp_mult.inputs[1].default_value = 4200.0
+    temp_mult.clamp = True
+    temp_mult.inputs["From Min"].default_value = 0.0
+    temp_mult.inputs["From Max"].default_value = 1.0
+    temp_mult.inputs["To Min"].default_value = FLAME_TEMP_FLOOR
+    temp_mult.inputs["To Max"].default_value = 4200.0
     temp_mult.location = (-350, -250)
 
     blackbody = tree.nodes.new("ShaderNodeBlackbody")
     blackbody.location = (-100, -250)
+
+    # Emission strength ~ flame^2 (not flame): with a linear weight the large,
+    # dim, floor-temperature skirt of the flame outweighs the small hot core in
+    # the emission integral, washing every colour-temperature setting into the
+    # same red-orange. Squaring concentrates the light in the core so the
+    # colour-temperature slider visibly changes the flame.
+    flame_sq = tree.nodes.new("ShaderNodeMath")
+    flame_sq.operation = "MULTIPLY"
+    flame_sq.location = (-350, -420)
 
     intensity_mult = tree.nodes.new("ShaderNodeMath")
     intensity_mult.name = intensity_node_name
@@ -183,10 +212,12 @@ def build_fire_smoke_material(
     emission = tree.nodes.new("ShaderNodeEmission")
     emission.location = (350, -300)
 
-    tree.links.new(attr_flame.outputs["Fac"], temp_mult.inputs[0])
-    tree.links.new(temp_mult.outputs["Value"], blackbody.inputs["Temperature"])
+    tree.links.new(attr_flame.outputs["Fac"], temp_mult.inputs["Value"])
+    tree.links.new(temp_mult.outputs["Result"], blackbody.inputs["Temperature"])
     tree.links.new(blackbody.outputs["Color"], emission.inputs["Color"])
-    tree.links.new(attr_flame.outputs["Fac"], intensity_mult.inputs[0])
+    tree.links.new(attr_flame.outputs["Fac"], flame_sq.inputs[0])
+    tree.links.new(attr_flame.outputs["Fac"], flame_sq.inputs[1])
+    tree.links.new(flame_sq.outputs["Value"], intensity_mult.inputs[0])
     tree.links.new(intensity_mult.outputs["Value"], emission.inputs["Strength"])
 
     tree.links.new(volume.outputs["Volume"], add.inputs[0])

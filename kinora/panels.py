@@ -178,8 +178,8 @@ class KINORA_PT_advanced_vis_panel(Panel):
             col.prop(props, "voronoi_colormap", text="Colour")
 
 
-def _fds_sequence_estimate(manifest, quantity_name, decimation, frame_stride):
-    """Estimate voxels/frame and total sequence file count for the given settings.
+def _fds_sequence_estimate(manifest, quantity_name):
+    """Estimate voxels/frame and total sequence file count.
 
     Cheap: only reads counts already stored in the manifest, no file I/O.
     """
@@ -193,11 +193,9 @@ def _fds_sequence_estimate(manifest, quantity_name, decimation, frame_stride):
             continue
         count = 1
         for dim in mesh["dims"]:
-            count *= max(1, (dim + decimation - 1) // decimation)
+            count *= dim
         voxels_per_frame += count
-    n_t = quantity.get("n_t", 0)
-    frame_count = (n_t + frame_stride - 1) // frame_stride if n_t else 0
-    file_count = frame_count * max(1, len(mesh_ids))
+    file_count = quantity.get("n_t", 0) * max(1, len(mesh_ids))
     return voxels_per_frame, file_count
 
 
@@ -254,16 +252,9 @@ class KINORA_PT_fds_smoke_panel(Panel):
         flame_state = "found" if "HRRPUV" in names else "not in file"
         box.label(text=f"Smoke (SOOT DENSITY): {smoke_state}")
         box.label(text=f"Flame (HRRPUV): {flame_state}")
-        box.prop(props, "fds_smoke_decimation")
-        box.prop(props, "fds_smoke_frame_stride")
         box.prop(props, "fds_refinement", text="Refine")
 
-        voxels_per_frame, file_count = _fds_sequence_estimate(
-            manifest,
-            "SOOT DENSITY",
-            props.fds_smoke_decimation,
-            props.fds_smoke_frame_stride,
-        )
+        voxels_per_frame, file_count = _fds_sequence_estimate(manifest, "SOOT DENSITY")
         if props.fds_refinement == "UPSAMPLE":
             voxels_per_frame *= 8
         box.label(text=f"~{voxels_per_frame:,} voxels/frame, {file_count} files to write")

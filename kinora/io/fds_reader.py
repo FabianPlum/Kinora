@@ -277,13 +277,11 @@ def _make_grid(field: np.ndarray, name: str, voxel_size: float, origin: tuple[fl
 def build_fire_smoke_sequence(
     smoke_data: dict[str, Any],
     flame_data: dict[str, Any] | None,
-    decimation: int,
-    frame_stride: int,
     refinement: str,
     cancel_event: threading.Event,
     progress_cb: Callable[[int, int], None] | None = None,
 ) -> tuple[str, list[str], int] | None:
-    """Write one multi-grid ``.vdb`` file per selected timestep, per submesh.
+    """Write one multi-grid ``.vdb`` file per FDS timestep, per submesh.
 
     Each file carries Blender's standard volume grids:
 
@@ -302,21 +300,23 @@ def build_fire_smoke_sequence(
     *smoke_data*/*flame_data* are :func:`read_smoke_quantity` outputs from the
     same simulation (same meshes and time axis). Files are named
     ``{mesh_id}_{sequence_index:04d}.vdb`` in a fresh temp directory, played
-    back via the Volume datablock's native ``is_sequence`` mechanism.
-    *decimation* subsamples the spatial grid; *frame_stride* selects every Nth
-    timestep; *refinement* applies :func:`_refine_field` per frame.
+    back via the Volume datablock's native ``is_sequence`` mechanism; every
+    timestep is written at the simulation's native grid resolution, with
+    *refinement* (see :func:`_refine_field`) applied per frame.
 
     Uses Blender's own bundled ``openvdb`` module - no new dependency. Heavy
     (many file writes); runs in the load operator's worker thread and checks
     *cancel_event* between files. Returns ``(sequence_dir, mesh_ids,
-    frame_count)``, or None if cancelled.
+    frame_count, file_times)`` - *file_times* being the FDS simulation time
+    (seconds) of each written sequence file, used to keep smoke playback
+    time-synced to other loaded data - or None if cancelled.
     """
     import openvdb
 
     refinement = _effective_refinement(refinement)
     times = smoke_data["times"]
     sequence_dir = tempfile.mkdtemp(prefix="kinora_smoke_")
-    frame_indices = list(range(0, len(times), max(1, frame_stride)))
+    frame_indices = list(range(len(times)))
     mesh_ids = [sub["mesh_id"] for sub in smoke_data["submeshes"]]
     total_files = len(mesh_ids) * len(frame_indices)
     written = 0
@@ -333,18 +333,15 @@ def build_fire_smoke_sequence(
     for sub in smoke_data["submeshes"]:
         dims = sub["dims"]
         coords = sub["coordinates"]
-        idx_x = np.arange(0, dims[0], decimation)
-        idx_y = np.arange(0, dims[1], decimation)
-        idx_z = np.arange(0, dims[2], decimation)
         origin = (
-            float(coords["x"][idx_x[0]]),
-            float(coords["y"][idx_y[0]]),
-            float(coords["z"][idx_z[0]]),
+            float(coords["x"][0]),
+            float(coords["y"][0]),
+            float(coords["z"][0]),
         )
         # FDS meshes use uniform grid spacing; the first step along x stands in
-        # for the (decimated) voxel size on all three axes.
+        # for the voxel size on all three axes.
         step_x = float(coords["x"][1] - coords["x"][0]) if dims[0] > 1 else 1.0
-        voxel_size = step_x * decimation / _upsample_factor(refinement)
+        voxel_size = step_x / _upsample_factor(refinement)
         flame_sub = flame_subs.get(sub["mesh_id"])
 
         for file_idx, t_idx in enumerate(frame_indices):
@@ -352,12 +349,12 @@ def build_fire_smoke_sequence(
                 shutil.rmtree(sequence_dir, ignore_errors=True)
                 return None
 
-            cell = sub["raw"][t_idx][np.ix_(idx_x, idx_y, idx_z)]
+            cell = sub["raw"][t_idx]
             extinction = physical_value_at(cell, sub["upper_bounds"][t_idx]) * SOOT_MASS_EXTINCTION
 
             flame_norm = None
             if flame_sub is not None and flame_max > 0:
-                flame_cell = flame_sub["raw"][t_idx][np.ix_(idx_x, idx_y, idx_z)]
+                flame_cell = flame_sub["raw"][t_idx]
                 flame_phys = physical_value_at(flame_cell, flame_sub["upper_bounds"][t_idx])
                 flame_norm = np.clip(flame_phys / flame_max, 0.0, 1.0)
                 # Carve smoke inside the flame envelope so the fire is visible.
@@ -387,7 +384,8 @@ def build_fire_smoke_sequence(
             if progress_cb is not None:
                 progress_cb(written, total_files)
 
-    return sequence_dir, mesh_ids, len(frame_indices)
+    file_times = [float(times[i]) for i in frame_indices]
+    return sequence_dir, mesh_ids, len(frame_indices), file_times
 
 
 def cleanup_vdb_sequence(sequence_dir: str | None) -> None:
