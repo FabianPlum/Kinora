@@ -420,14 +420,14 @@ def _test_dependency_installation(addon_name, repo_root):
 
 
 def _test_fds_loading(addon_name, repo_root):
-    """Test FDS fire & smoke loading against the prepackaged examples/t_section_fds/demo.smv."""
+    """Test FDS fire & smoke loading against the prepackaged examples/t_junction.smv."""
     print("\n" + "=" * 72)
-    print("Testing FDS Fire & Smoke Loading (examples/t_section_fds/demo.smv)")
+    print("Testing FDS Fire & Smoke Loading (examples/t_junction.smv)")
     print("=" * 72 + "\n")
 
     import pathlib
 
-    smv_path = pathlib.Path(repo_root) / "kinora" / "examples" / "t_section_fds" / "demo.smv"
+    smv_path = pathlib.Path(repo_root) / "kinora" / "examples" / "t_junction.smv"
     if not smv_path.exists():
         raise RuntimeError(f"FDS example file not found: {smv_path}")
     print(f"✓ Found FDS example file: {smv_path}")

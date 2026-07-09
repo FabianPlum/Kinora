@@ -1,29 +1,17 @@
 TITLE
- T-corridor fire for pyFDS-Evac demo
+ T-corridor fire for pyFDS-Evac t_junction
 
 FDSVERSION
 FDS-6.11.0-0-g369a20b-release
 
 INPF
- demo.fds
+ t_junction.fds
 
 REVISION
 Revisio
 
 CHID
- demo
-
-CSVF
- hrr
- demo_hrr.csv
-
-CSVF
- steps
- demo_steps.csv
-
-CSVF
- devc
- demo_devc.csv
+ t_junction
 
 NMESHES
      1
@@ -430,50 +418,20 @@ CVENT
 
 
 SMOKF3D     1   8700.000
- demo_1_1.s3d
+ t_junction_1_1.s3d
  SOOT DENSITY
  rho_C
  kg/m3
 SMOKF3D     1      0.000
- demo_1_2.s3d
+ t_junction_1_2.s3d
  HRRPUV
  hrrpuv
  kW/m3
 SMOKF3D     1      0.000
- demo_1_3.s3d
+ t_junction_1_3.s3d
  EFFECTIVE FLAME TEMPERATURE
  temp
  C
-SLCF     1 # STRUCTURED &     0   120     0    52     8     8 !      1      0      3
- demo_1_1.sf
- SOOT EXTINCTION COEFFICIENT
- ext_coef_C
- 1/m
-SLCF     1 # STRUCTURED &     0   120     0    52     8     8 !      2      0      3
- demo_1_2.sf
- CARBON MONOXIDE VOLUME FRACTION
- X_CO
- mol/mol
-SLCF     1 # STRUCTURED &     0   120     0    52     8     8 !      3      0      3
- demo_1_3.sf
- CARBON DIOXIDE VOLUME FRACTION
- X_CO2
- mol/mol
-SLCF     1 # STRUCTURED &     0   120     0    52     8     8 !      4      0      3
- demo_1_4.sf
- OXYGEN VOLUME FRACTION
- X_O2
- mol/mol
-SLCF     1 # STRUCTURED &     0   120     0    52     8     8 !      5      0      3
- demo_1_5.sf
- HYDROGEN CYANIDE VOLUME FRACTION
- X_HCN
- mol/mol
-SLCF     1 # STRUCTURED &     0   120     0    52     8     8 !      6      0      3
- demo_1_6.sf
- SOOT VISIBILITY
- VIS_C
- m
 DEVICE_ACT     T_fire
      1      0.00     0
 DEVICE_ACT     K_fire

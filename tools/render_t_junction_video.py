@@ -60,7 +60,7 @@ scene.eevee.use_volumetric_shadows = True
 props = scene.kinora_props
 
 # ---------- JuPedSim trajectories (native coordinates) ----------
-db = pathlib.Path(REPO) / "kinora/examples/t_section_jupedsim/demo.sqlite"
+db = pathlib.Path(REPO) / "kinora/examples/t_junction.sqlite"
 traj, _ = read_sqlite(db, TRAJ_STEP, False, ev)
 print("agents:", len(traj["agent_ids"]))
 mat_cache = {}
@@ -92,7 +92,7 @@ if agent_mat and agent_mat.use_nodes:
     bsdf.inputs["Emission Strength"].default_value = 5.0
 
 # ---------- FDS fire & smoke (same coordinates, on top) ----------
-smv = pathlib.Path(REPO) / "kinora/examples/t_section_fds/demo.smv"
+smv = pathlib.Path(REPO) / "kinora/examples/t_junction.smv"
 smoke_data, _ = read_smoke_quantity(smv, "SOOT DENSITY", None, ev)
 flame_data, _ = read_smoke_quantity(smv, "HRRPUV", None, ev)
 seq_dir, mesh_ids, frame_count = build_fire_smoke_sequence(
@@ -231,6 +231,6 @@ else:
     scene.render.ffmpeg.format = "MPEG4"
     scene.render.ffmpeg.codec = "H264"
     scene.render.ffmpeg.constant_rate_factor = "MEDIUM"
-    scene.render.filepath = os.path.join(OUT, "kinora_t_section_fire_evac.mp4")
+    scene.render.filepath = os.path.join(OUT, "kinora_t_junction_fire_evac.mp4")
     bpy.ops.render.render(animation=True)
     print("VIDEO DONE:", scene.render.filepath)
