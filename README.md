@@ -6,7 +6,7 @@
 
 ### A Blender Add-on for visualising pedestrian simulation and experimental trajectory data.
 
-![Addon Preview](images/kinora_preview_loop.gif)
+![Addon Preview](https://raw.githubusercontent.com/FabianPlum/Kinora/refs/heads/main/images/kinora_preview_loop.gif)
 
 ## Install
 
