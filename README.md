@@ -4,7 +4,7 @@
 <img src="images/kinora-logo-light.svg#gh-light-mode-only" height="120" alt="Kinora">
 
 
-### A Blender Add-on for visualising pedestrian simulation and experimental trajectory data.
+### A Blender Add-on for visualising pedestrian simulation and experimental trajectory data — together with fire and smoke from FDS.
 
 ![Addon Preview](https://raw.githubusercontent.com/FabianPlum/Kinora/refs/heads/main/images/kinora_preview_loop.gif)
 
@@ -29,6 +29,17 @@ Agents and walkable geometry appear in the scene, with the timeline set to match
 
 For big simulations, tick **Big Data Mode** or set **Load Every Nth Frame** to something above 1.
 
+## Load fire & smoke (FDS)
+
+Kinora can render the Smoke3D output of an [FDS](https://pages.nist.gov/fds-smv/) fire simulation as an animated, physically-based volume — on its own or on top of a loaded trajectory for combined fire-and-evacuation scenes.
+
+1. In the **FDS Fire & Smoke** panel, click **Browse...** and pick the simulation's `.smv` file.
+2. Click **Load Fire & Smoke**.
+
+Smoke opacity comes straight from the soot density via the Beer-Lambert law (the same convention Smokeview uses), and the flame is rendered from HRRPUV with blackbody emission — no tuning needed, though both channels have their own show toggle and density slider. When a trajectory is loaded, smoke playback synchronises to its timeline automatically.
+
+Try it with the bundled example: load `kinora/examples/t_junction.sqlite` as the trajectory and `kinora/examples/t_junction.smv` as the fire (a T-shaped corridor evacuation past a growing fire, both covering the same 300 s).
+
 ## More
 
 - Full features, options, troubleshooting, and development setup: [DEVELOPER.md](DEVELOPER.md)
@@ -42,3 +53,5 @@ MIT.
 
 - [JuPedSim](https://github.com/PedestrianDynamics/jupedsim)
 - [PedPy](https://github.com/PedestrianDynamics/PedPy)
+- [FDS / Smokeview](https://pages.nist.gov/fds-smv/) (NIST)
+- [fdsreader](https://github.com/FireDynamics/fdsreader)

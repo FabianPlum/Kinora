@@ -234,6 +234,7 @@ class KINORA_OT_load_simulation(Operator):
                 object_name=obj_name,
                 frame_data=self._worker_data.get("frame_data"),
                 color_frame_data=self._worker_data.get("color_frame_data"),
+                fps=self._worker_data.get("fps"),
             )
             props.loading_message = "Creating particle points..."
             props.loading_progress = 90.0
@@ -267,6 +268,7 @@ class KINORA_OT_load_simulation(Operator):
                     objects=objects,
                     frame_data=self._worker_data.get("frame_data"),
                     color_frame_data=self._worker_data.get("color_frame_data"),
+                    fps=self._worker_data.get("fps"),
                 )
             from .core import voronoi
 

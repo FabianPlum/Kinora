@@ -18,7 +18,10 @@ bl_info = {
     "version": (0, 2, 1),
     "blender": (4, 0, 0),
     "location": "View3D > Sidebar > Kinora",
-    "description": "Visualise Pedestrian Data trajectory files (SQLite and HDF5) with agent animations and geometry",
+    "description": (
+        "Visualise Pedestrian Data trajectory files (SQLite and HDF5) with agent animations and "
+        "geometry, and FDS Smoke3D fire simulation data"
+    ),
     "doc_url": "https://github.com/FabianPlum/Kinora",
     "tracker_url": "https://github.com/FabianPlum/Kinora/issues",
     "category": "Import-Export",
@@ -37,7 +40,7 @@ from bpy.props import (
 from bpy.types import PropertyGroup
 
 # Import submodules
-from . import operators, panels, preferences
+from . import fds_operators, operators, panels, preferences
 from .core import colormaps
 
 
@@ -76,12 +79,13 @@ def update_geometry_thickness(self, context):
 
 
 def _sync_advanced_vis_shading(props, context):
-    """Keep viewports in Material Preview while any emission-based advanced
+    """Keep viewports in Material Preview while any emission/volume-based advanced
     visualisation is on, reverting to Solid only when all are off.
 
-    The overlay, agent colours, path colours and Voronoi cells are all emission
-    materials that Solid/Wireframe shading does not show, so they share one
-    viewport-shading switch (otherwise an enabled effect looks like it failed).
+    The overlay, agent colours, path colours, Voronoi cells and the FDS
+    smoke/fire volumes are all materials Solid/Wireframe shading does not
+    show, so they share one viewport-shading switch (otherwise an enabled
+    effect looks like it failed).
     """
     from .core import overlay
 
@@ -90,6 +94,8 @@ def _sync_advanced_vis_shading(props, context):
         or props.show_agent_colors
         or props.show_path_colors
         or props.show_voronoi
+        or props.show_fds_smoke
+        or props.show_fds_fire
     ):
         overlay.ensure_material_preview(context)
     else:
@@ -159,6 +165,21 @@ def update_voronoi_appearance(self, context):
     voronoi.update_appearance(context)
 
 
+def update_fds_smoke_visibility(self, context):
+    """Show/hide the FDS fire & smoke volume and sync viewport shading."""
+    from .core import smoke
+
+    smoke.refresh(context)
+    _sync_advanced_vis_shading(self, context)
+
+
+def update_fds_smoke_appearance(self, context):
+    """Live thickness/detail/flame-temperature/flame-intensity/frame-offset update."""
+    from .core import smoke
+
+    smoke.update_appearance(context)
+
+
 def parse_advanced_vis_manifest(props):
     """Return the parsed advanced-visualisation manifest, or an empty one.
 
@@ -178,6 +199,28 @@ def parse_advanced_vis_manifest(props):
     manifest.setdefault("backgrounds", [])
     manifest.setdefault("agent_colors", [])
     manifest.setdefault("polygons", [])
+    return manifest
+
+
+def parse_fds_smoke_manifest(props):
+    """Return the parsed FDS Smoke3D manifest (meshes/quantities), or an empty one.
+
+    Populated by ``KINORA_OT_select_fds_file``'s cheap probe (see
+    ``io.fds_reader.probe_fds_simulation``) and stored as JSON so it persists
+    with the .blend and can be read cheaply from the quantity dropdown and panel.
+    """
+    raw = props.fds_smoke_manifest if props else ""
+    empty = {"meshes": [], "quantities": []}
+    if not raw:
+        return empty
+    try:
+        manifest = json.loads(raw)
+    except (ValueError, TypeError):
+        return empty
+    if not isinstance(manifest, dict):
+        return empty
+    manifest.setdefault("meshes", [])
+    manifest.setdefault("quantities", [])
     return manifest
 
 
@@ -375,6 +418,150 @@ class KinoraProperties(PropertyGroup):
         update=update_voronoi_appearance,
     )
 
+    # --- FDS Smoke3D (independent of the trajectory load above) -----------
+    fds_smv_file: StringProperty(
+        name="FDS .smv File",
+        description="Path to the FDS .smv file describing the simulation",
+        default="",
+        subtype="FILE_PATH",
+    )
+
+    fds_smoke_manifest: StringProperty(
+        name="FDS Smoke Manifest",
+        description="JSON describing meshes/quantities available in the selected .smv file",
+        default="",
+        options={"HIDDEN"},
+    )
+
+    fds_refinement: EnumProperty(
+        name="Refinement",
+        description="Smoothing applied to the coarse CFD grid when writing the sequence",
+        items=[
+            (
+                "SMOOTH",
+                "Smooth",
+                "Light gaussian smoothing; removes blocky voxel steps (recommended)",
+            ),
+            (
+                "UPSAMPLE",
+                "Smooth + Upsample 2x",
+                "Smoother silhouettes at 8x the voxels (slower load, larger files)",
+            ),
+            ("OFF", "Off", "Raw simulation voxels"),
+        ],
+        default="SMOOTH",
+    )
+
+    show_fds_smoke: BoolProperty(
+        name="Show Smoke",
+        description="Display the smoke (soot density) channel",
+        default=True,
+        update=update_fds_smoke_visibility,
+    )
+
+    fds_smoke_density_multiplier: FloatProperty(
+        name="Smoke Density Multiplier",
+        description=(
+            "Multiplier on the physically-based smoke opacity "
+            "(1.0 = Smokeview-accurate Beer-Lambert extinction)"
+        ),
+        default=1.0,
+        min=0.0,
+        soft_max=5.0,
+        update=update_fds_smoke_appearance,
+    )
+
+    fds_mass_extinction: FloatProperty(
+        name="Mass Extinction (m²/kg)",
+        description=(
+            "Soot mass extinction coefficient for the Beer-Lambert smoke opacity; "
+            "FDS's default MASS_EXTINCTION_COEFFICIENT is 8700 m²/kg"
+        ),
+        default=8700.0,
+        min=1.0,
+        soft_max=20000.0,
+        update=update_fds_smoke_appearance,
+    )
+
+    fds_detail_amount: FloatProperty(
+        name="Detail",
+        description=(
+            "Procedural sub-grid detail noise: breaks the smooth CFD blob into wisps (0 disables)"
+        ),
+        default=0.35,
+        min=0.0,
+        max=1.0,
+        update=update_fds_smoke_appearance,
+    )
+
+    show_fds_fire: BoolProperty(
+        name="Show Flame",
+        description="Display the flame (HRRPUV) channel",
+        default=True,
+        update=update_fds_smoke_visibility,
+    )
+
+    fds_fire_density_multiplier: FloatProperty(
+        name="Flame Density Multiplier",
+        description=(
+            "Multiplier on the flame's blackbody emission strength (1.0 = default brightness)"
+        ),
+        default=1.0,
+        min=0.0,
+        soft_max=10.0,
+        update=update_fds_smoke_appearance,
+    )
+
+    fds_flame_temperature: FloatProperty(
+        name="Flame Colour Temp (K)",
+        description=(
+            "Blackbody colour temperature of the flame's brightest core - a visual "
+            "control, not an FDS quantity (HRRPUV is a heat-release density, not a "
+            "temperature). Lower = deep orange, higher = yellow-white"
+        ),
+        default=4200.0,
+        min=1200.0,
+        max=6000.0,
+        update=update_fds_smoke_appearance,
+    )
+
+    fds_smoke_frame_offset: IntProperty(
+        name="Frame Offset",
+        description=(
+            "Shift the smoke sequence's start by this many Blender frames, for aligning "
+            "with other loaded data"
+        ),
+        default=0,
+        update=update_fds_smoke_appearance,
+    )
+
+    fds_smoke_loading_in_progress: BoolProperty(
+        name="FDS Loading In Progress",
+        default=False,
+        options={"HIDDEN"},
+    )
+
+    fds_smoke_loading_progress: FloatProperty(
+        name="FDS Loading Progress",
+        default=0.0,
+        min=0.0,
+        max=100.0,
+        subtype="PERCENTAGE",
+        options={"HIDDEN"},
+    )
+
+    fds_smoke_loading_message: StringProperty(
+        name="FDS Loading Message",
+        default="",
+        options={"HIDDEN"},
+    )
+
+    fds_smoke_loaded: BoolProperty(
+        name="FDS Fire & Smoke Loaded",
+        default=False,
+        options={"HIDDEN"},
+    )
+
 
 # List of classes to register
 classes = [
@@ -387,6 +574,7 @@ def register():
     # Register classes from submodules first
     preferences.register()
     operators.register()
+    fds_operators.register()
     panels.register()
 
     # Register main classes
@@ -410,6 +598,7 @@ def unregister():
 
     # Unregister submodule classes
     panels.unregister()
+    fds_operators.unregister()
     operators.unregister()
     preferences.unregister()
 

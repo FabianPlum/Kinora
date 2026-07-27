@@ -25,6 +25,10 @@ Everything that used to live in the README but isn't strictly necessary for some
 - **Path visibility toggle**: show or hide all agent path curves with a single checkbox.
 - **Geometry visualisation**: walkable area boundaries and obstacles are displayed as curves.
 - **Big Data Mode**: stream agents as particles for very large datasets.
+- **FDS fire & smoke**: load an FDS simulation's Smoke3D output (`.smv` + `.s3d`) and
+  render it as an animated OpenVDB volume — physically-based smoke opacity
+  (Beer-Lambert soot extinction, Smokeview's own convention) plus blackbody flame
+  emission from HRRPUV, automatically time-synced to a loaded trajectory.
 - **Display controls**: agent scale, geometry thickness, frame rate.
 - **Built-in dependency installer** for the required Python packages.
 
@@ -33,9 +37,9 @@ Everything that used to live in the README but isn't strictly necessary for some
 - **Blender 4.0+** (Blender 3.x is not supported).
   - Development and testing on Blender 5.0.
   - Should work on Blender 4.0+ and 5.1+ but is not actively tested.
-- **Python packages**: `pedpy` and its transitive deps, installed automatically via the addon.
+- **Python packages**: `pedpy` and `fdsreader` (plus their transitive deps), installed automatically via the addon.
 
-`pedpy` is kept mainly for legacy compatibility and because we currently rely on its `shapely` dependency for geometry processing. SQLite reading is now handled via a streaming approach inspired by the [JuPedSim visualizer's reader](https://github.com/PedestrianDynamics/jupedsim/tree/master/python_modules/jupedsim_visualizer/jupedsim_visualizer).
+`pedpy` is kept mainly for legacy compatibility and because we currently rely on its `shapely` dependency for geometry processing. SQLite reading is now handled via a streaming approach inspired by the [JuPedSim visualizer's reader](https://github.com/PedestrianDynamics/jupedsim/tree/master/python_modules/jupedsim_visualizer/jupedsim_visualizer). [`fdsreader`](https://github.com/FireDynamics/fdsreader) parses FDS Smoke3D output; the OpenVDB volumes are written with Blender's own bundled `openvdb` module, so no extra binary dependency is needed.
 
 ## Installation (detailed)
 
@@ -45,7 +49,7 @@ Everything that used to live in the README but isn't strictly necessary for some
 4. Click **Install...** and select the downloaded ZIP file.
 5. Enable the addon by checking the box next to "Kinora - JuPedSim Visualiser".
 6. **(Recommended)** If you started Blender without a terminal (e.g. on Windows by double-clicking the icon), open **Window > Toggle System Console** before the next step. You can then see pip's progress while dependencies install; Blender may look unresponsive for one or two minutes.
-7. Expand the addon settings and click **Install Dependencies** (this installs `pedpy` and `numpy<2.0` into the addon folder).
+7. Expand the addon settings and click **Install Dependencies** (this installs `pedpy` and `fdsreader` into the addon folder, constrained to Blender's own bundled `numpy`).
 8. **Restart Blender.**
 
 The **Kinora** panel will appear in the right sidebar of the 3D Viewport (press `N` if the sidebar is hidden).
@@ -66,6 +70,41 @@ The **Kinora** panel will appear in the right sidebar of the 3D Viewport (press 
 7. (Optional) Enable **Load Full Paths** if you want per-agent path curves.
 8. Click **Load Simulation**.
 
+### FDS fire & smoke
+
+Works standalone or alongside a loaded trajectory (for combined
+fire-and-evacuation scenes). The bundled `examples/t_junction.smv` +
+`examples/t_junction.sqlite` pair is a ready-made coupled scenario.
+
+1. In the **FDS Fire & Smoke** panel, click **Browse...** and pick the
+   simulation's `.smv` file. The panel reports whether the file provides
+   smoke (`SOOT DENSITY`) and flame (`HRRPUV`) Smoke3D output — smoke is
+   required, flame is optional.
+2. (Optional) Pick a **Refine** mode: light gaussian smoothing (default,
+   removes the blocky CFD-grid look), smoothing plus 2× upsampling (nicer
+   silhouettes, 8× the voxels), or off (raw voxels).
+3. Click **Load Fire & Smoke**. Every FDS timestep is written as an OpenVDB
+   file (in a temporary directory) and played back through Blender's native
+   volume-sequence mechanism.
+
+Notes:
+
+- **Physically-based smoke**: the density grid carries the Beer-Lambert
+  extinction coefficient (soot density × the mass extinction coefficient,
+  default 8700 m²/kg — FDS's own `MASS_EXTINCTION_COEFFICIENT`), which is
+  exactly how Smokeview computes smoke opacity. Real smoke is therefore
+  nearly opaque near the fire; lower the **Smoke Density Multiplier** (e.g.
+  to 0.1) if you want agents inside the plume to stay visible.
+- **Flame**: HRRPUV drives blackbody emission; **Flame Colour Temp (K)** is
+  a visual colour control (HRRPUV is a heat-release density, not a
+  temperature).
+- **Timeline sync**: with a trajectory loaded, smoke playback follows the
+  trajectory's simulation clock automatically (each Blender frame shows the
+  FDS state nearest in time); **Frame Offset** shifts it manually.
+- Volumes need **Material Preview** or **Rendered** viewport shading; the
+  addon switches Solid viewports over automatically, and raises Cycles'
+  volume light bounces (default 0) so smoke doesn't render flat.
+
 ## What gets created
 
 - **Kinora_Agents** collection: contains an animated cylinder mesh for each agent.
@@ -73,6 +112,8 @@ The **Kinora** panel will appear in the right sidebar of the 3D Viewport (press 
   - Path curves for each agent showing their complete trajectory (hidden by default).
 - **Big Data Mode**: creates a single particle system driven by streamed frame updates.
 - **Kinora_Geometry** collection: contains curve objects for boundaries and obstacles.
+- **Kinora_Smoke** collection (FDS loads): one Volume object per FDS mesh, playing an
+  OpenVDB sequence written to a temporary directory (removed again on unload).
 - Animation timeline is automatically set to match the simulation frames.
 
 ## Display options
@@ -86,6 +127,15 @@ After loading a simulation, a **Display Options** section appears in the panel:
   - Requires **Load Full Paths** on import.
   - Paths are hidden by default but can be toggled on or off at any time.
   - Each path is a 3D curve object showing the agent's complete trajectory.
+
+After loading FDS fire & smoke, the **FDS Fire & Smoke** panel shows per-channel controls
+(all live — no reload needed):
+
+- **Smoke**: show toggle, density multiplier (1.0 = Smokeview-accurate opacity),
+  mass extinction coefficient (m²/kg), and procedural detail noise amount.
+- **Flame**: show toggle, density multiplier (emission brightness), and flame
+  colour temperature (K).
+- **Frame Offset**: shift the smoke sequence against the rest of the timeline.
 
 ## Simulation data structure
 

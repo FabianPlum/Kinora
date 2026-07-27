@@ -5,6 +5,12 @@ feed it into a ColorRamp (the colour scheme, see ``colormaps``) and out through 
 shadeless emission shader.  They differ only in how the scalar reaches the ramp
 (object colour for agents, a geometry attribute for paths and cells), so the common
 tail and the live colour-map swap live here.
+
+The FDS fire & smoke volume (``core.smoke``) is the one Kinora material that
+renders as a volume rather than a surface; :func:`build_fire_smoke_material`
+builds it around the stock Principled Volume shader: physically-based
+Beer-Lambert smoke opacity from the ``density`` grid, procedural sub-grid
+detail noise, and blackbody fire emission from the ``temperature`` grid.
 """
 
 import bpy
@@ -47,6 +53,187 @@ def build_attribute_emission(material, attribute_name, ramp_name, colormap):
     attr.attribute_name = attribute_name
     attr.location = (-400, 0)
     tree.links.new(attr.outputs["Fac"], ramp.inputs["Fac"])
+
+
+# Soot has very low albedo (it absorbs almost all light rather than scattering
+# it); real smoke's apparent brightness/colour comes mostly from lighting and
+# multiple scattering, not a per-voxel colour scheme - so a fixed dark grey
+# stands in for it, no ColorRamp/colour picker needed at all.
+SMOKE_ALBEDO = (0.05, 0.05, 0.05, 1.0)
+# A touch of forward scattering reads as softer/less flat than pure isotropic
+# scattering (Anisotropy 0), closer to how light behaves passing through smoke.
+SMOKE_ANISOTROPY = 0.2
+# Detail-noise feature size in metres (Noise Texture scale is ~features per
+# metre in object space): ~0.4 m wisps suit building-scale FDS domains.
+SMOKE_NOISE_SCALE = 2.5
+
+# Blackbody temperature (K) at the *bottom* of the flame ramp. Without a floor,
+# temperature = flame x peak maps most of the visible flame volume (HRRPUV
+# values 0.1-0.4 of the series max) to 400-1700 K deep red regardless of the
+# peak setting - which made the flame-colour slider appear to do nothing. With
+# the floor, any visible flame glows at least dull orange and the slider
+# genuinely sweeps the core colour.
+FLAME_TEMP_FLOOR = 1100.0
+
+# Internal emission gain so the flame density multiplier's default of 1.0
+# gives a clearly visible flame (calibrated by render in the demo scene). The
+# flame^2 emission weighting below concentrates light in the core but dims the
+# integral; this compensates without forcing users onto large slider values.
+FLAME_EMISSION_GAIN = 30.0
+
+
+def build_fire_smoke_material(
+    material,
+    volume_node_name,
+    smoke_scale_node_name,
+    detail_node_name,
+    temp_node_name,
+    intensity_node_name,
+):
+    """Build the combined FDS fire & smoke volume material.
+
+    Returns ``(volume, smoke_scale, detail_range, temp_mult, intensity_mult)``
+    nodes; the caller drives the live parameters through them.
+
+    Smoke: the ``density`` grid holds the raw soot mass density (kg/m3, see
+    ``io.fds_reader``); the *smoke_scale* Math node multiplies it by the
+    user-editable mass extinction coefficient (Beer-Lambert, Smokeview's own
+    convention) times the smoke density multiplier - the caller sets that
+    product (and 0 to hide the smoke channel entirely). A procedural Noise
+    Texture modulates the result by ``1 ± detail_amount`` (the pyro-workflow
+    "sub-grid detail" trick): mean-preserving, so overall opacity stays put
+    while edges break up into wisps the coarse CFD grid can't carry. Static
+    3D noise in object space is enough - the data animates through it.
+
+    Fire: an *explicit* emission branch, deliberately NOT the Principled
+    Volume's built-in blackbody (whose emission is coupled to the smoke
+    density - a flame buried in optically thick soot would be invisible and
+    a thin-smoke region couldn't glow). ``Attribute("temperature")`` (flame,
+    normalised 0..1) is remapped to :data:`FLAME_TEMP_FLOOR`..peak Kelvin
+    (peak = the user's flame colour temperature) -> Blackbody node ->
+    Emission colour, with Emission strength = flame x the flame density
+    multiplier (0 hides the flame channel); joined to the smoke via Add
+    Shader. The Blackbody node outputs a normalised colour, so the
+    multiplier is an ordinary emission strength (sane values ~1-50).
+    """
+    material.use_nodes = True
+    tree = material.node_tree
+    tree.nodes.clear()
+
+    output = tree.nodes.new("ShaderNodeOutputMaterial")
+    output.location = (800, 0)
+
+    add = tree.nodes.new("ShaderNodeAddShader")
+    add.location = (600, 0)
+
+    volume = tree.nodes.new("ShaderNodeVolumePrincipled")
+    volume.name = volume_node_name
+    volume.location = (350, 200)
+    volume.inputs["Color"].default_value = SMOKE_ALBEDO
+    volume.inputs["Anisotropy"].default_value = SMOKE_ANISOTROPY
+
+    # --- smoke density branch ---
+    attr = tree.nodes.new("ShaderNodeAttribute")
+    attr.attribute_type = "GEOMETRY"
+    attr.attribute_name = "density"
+    attr.location = (-600, 200)
+
+    smoke_scale = tree.nodes.new("ShaderNodeMath")
+    smoke_scale.name = smoke_scale_node_name
+    smoke_scale.operation = "MULTIPLY"
+    smoke_scale.inputs[1].default_value = 1.0
+    smoke_scale.location = (-350, 200)
+
+    texcoord = tree.nodes.new("ShaderNodeTexCoord")
+    texcoord.location = (-600, 0)
+
+    noise = tree.nodes.new("ShaderNodeTexNoise")
+    noise.noise_dimensions = "3D"
+    noise.inputs["Scale"].default_value = SMOKE_NOISE_SCALE
+    noise.inputs["Detail"].default_value = 4.0
+    noise.location = (-350, 0)
+
+    # Noise Fac (mean ~0.5) -> modulation factor in [1-d, 1+d], mean ~1.
+    detail_range = tree.nodes.new("ShaderNodeMapRange")
+    detail_range.name = detail_node_name
+    detail_range.clamp = False
+    detail_range.inputs["From Min"].default_value = 0.0
+    detail_range.inputs["From Max"].default_value = 1.0
+    detail_range.inputs["To Min"].default_value = 1.0
+    detail_range.inputs["To Max"].default_value = 1.0
+    detail_range.location = (-100, 0)
+
+    detail_mult = tree.nodes.new("ShaderNodeMath")
+    detail_mult.operation = "MULTIPLY"
+    detail_mult.location = (100, 150)
+
+    tree.links.new(attr.outputs["Fac"], smoke_scale.inputs[0])
+    tree.links.new(texcoord.outputs["Object"], noise.inputs["Vector"])
+    tree.links.new(noise.outputs["Fac"], detail_range.inputs["Value"])
+    tree.links.new(smoke_scale.outputs["Value"], detail_mult.inputs[0])
+    tree.links.new(detail_range.outputs["Result"], detail_mult.inputs[1])
+    tree.links.new(detail_mult.outputs["Value"], volume.inputs["Density"])
+
+    # --- flame emission branch ---
+    attr_flame = tree.nodes.new("ShaderNodeAttribute")
+    attr_flame.attribute_type = "GEOMETRY"
+    attr_flame.attribute_name = "temperature"
+    attr_flame.location = (-600, -300)
+
+    # flame 0..1 -> FLAME_TEMP_FLOOR..peak Kelvin (peak = the user's flame
+    # colour temperature, set by the caller on "To Max").
+    temp_mult = tree.nodes.new("ShaderNodeMapRange")
+    temp_mult.name = temp_node_name
+    temp_mult.clamp = True
+    temp_mult.inputs["From Min"].default_value = 0.0
+    temp_mult.inputs["From Max"].default_value = 1.0
+    temp_mult.inputs["To Min"].default_value = FLAME_TEMP_FLOOR
+    temp_mult.inputs["To Max"].default_value = 4200.0
+    temp_mult.location = (-350, -250)
+
+    blackbody = tree.nodes.new("ShaderNodeBlackbody")
+    blackbody.location = (-100, -250)
+
+    # Emission strength ~ flame^2 (not flame): with a linear weight the large,
+    # dim, floor-temperature skirt of the flame outweighs the small hot core in
+    # the emission integral, washing every colour-temperature setting into the
+    # same red-orange. Squaring concentrates the light in the core so the
+    # colour-temperature slider visibly changes the flame.
+    flame_sq = tree.nodes.new("ShaderNodeMath")
+    flame_sq.operation = "MULTIPLY"
+    flame_sq.location = (-350, -420)
+
+    intensity_mult = tree.nodes.new("ShaderNodeMath")
+    intensity_mult.name = intensity_node_name
+    intensity_mult.operation = "MULTIPLY"
+    intensity_mult.inputs[1].default_value = 0.0
+    intensity_mult.location = (-100, -400)
+
+    emission = tree.nodes.new("ShaderNodeEmission")
+    emission.location = (350, -300)
+
+    tree.links.new(attr_flame.outputs["Fac"], temp_mult.inputs["Value"])
+    tree.links.new(temp_mult.outputs["Result"], blackbody.inputs["Temperature"])
+    tree.links.new(blackbody.outputs["Color"], emission.inputs["Color"])
+    tree.links.new(attr_flame.outputs["Fac"], flame_sq.inputs[0])
+    tree.links.new(attr_flame.outputs["Fac"], flame_sq.inputs[1])
+    tree.links.new(flame_sq.outputs["Value"], intensity_mult.inputs[0])
+    tree.links.new(intensity_mult.outputs["Value"], emission.inputs["Strength"])
+
+    tree.links.new(volume.outputs["Volume"], add.inputs[0])
+    tree.links.new(emission.outputs["Emission"], add.inputs[1])
+    tree.links.new(add.outputs["Shader"], output.inputs["Volume"])
+    return volume, smoke_scale, detail_range, temp_mult, intensity_mult
+
+
+def set_detail_amount(detail_range, amount):
+    """Set the detail-noise modulation strength on the node returned by the builder.
+
+    *amount* 0 disables the modulation (factor pinned to 1); 1 lets noise swing
+    density between 0 and 2x. Mean-preserving around 1 for any amount.
+    """
+    detail_range.inputs["To Min"].default_value = 1.0 - amount
+    detail_range.inputs["To Max"].default_value = 1.0 + amount
 
 
 def update_ramp(material_name, ramp_name, colormap):

@@ -156,14 +156,34 @@ class KinoraAddonPreferences(AddonPreferences):
                 row.label(text=f"Version: {version}")
             except (ImportError, AttributeError):
                 pass
-
-            box.separator()
-            row = box.row()
-            row.operator("kinora.uninstall_dependencies", icon="TRASH")
         else:
             row = box.row()
             row.label(text="pedpy: Not Installed", icon="ERROR")
 
+        if install_utils.is_fdsreader_installed(ADDON_DIR):
+            row = box.row()
+            row.label(text="fdsreader: Installed", icon="CHECKMARK")
+
+            try:
+                install_utils.ensure_deps_in_path(ADDON_DIR)
+                import fdsreader
+
+                version = getattr(fdsreader, "__version__", "unknown")
+                row = box.row()
+                row.label(text=f"Version: {version}")
+            except (ImportError, AttributeError):
+                pass
+        else:
+            row = box.row()
+            row.label(text="fdsreader: Not Installed", icon="ERROR")
+
+        if install_utils.is_pedpy_installed(ADDON_DIR) and install_utils.is_fdsreader_installed(
+            ADDON_DIR
+        ):
+            box.separator()
+            row = box.row()
+            row.operator("kinora.uninstall_dependencies", icon="TRASH")
+        else:
             box.separator()
             box.label(text="Click below to install dependencies:", icon="INFO")
             box.label(text="(No admin privileges required)")

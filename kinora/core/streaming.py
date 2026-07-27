@@ -17,6 +17,7 @@ STREAM_STATE: dict[str, Any] = {
     "min_frame": 0,
     "max_frame": 0,
     "frame_step": 1,
+    "fps": None,  # trajectory frames per second (sim-time clock for cross-module sync)
     "agent_ids": [],
     "id_to_index": {},
     "mode": None,  # "default" or "big"
@@ -48,6 +49,27 @@ def _current_data_frame(scene: bpy.types.Scene) -> int | None:
     if db_frame < state["min_frame"] or db_frame > state["max_frame"]:
         return None
     return db_frame
+
+
+def current_sim_time(scene: bpy.types.Scene) -> float | None:
+    """Trajectory simulation time (seconds) at the current Blender frame, or None.
+
+    The loaded trajectory defines the timeline's clock; other modules (the FDS
+    smoke sequence) sync to it. Unlike :func:`_current_data_frame` this clamps
+    to the trajectory's time range instead of returning None outside it, so a
+    consumer holds the first/last state rather than cutting out. Returns None
+    only when no trajectory is loaded or its fps is unknown.
+    """
+    state = STREAM_STATE
+    if not state["agent_ids"] or not state["fps"]:
+        return None
+    step = state["frame_step"]
+    if step <= 1:
+        db_frame = scene.frame_current
+    else:
+        db_frame = state["min_frame"] + (scene.frame_current - scene.frame_start) * step
+    db_frame = max(state["min_frame"], min(db_frame, state["max_frame"]))
+    return db_frame / state["fps"]
 
 
 def stream_frame_handler(scene: bpy.types.Scene) -> None:
@@ -159,8 +181,10 @@ def start_streaming(
     object_name: str | None = None,
     frame_data: FrameData | None = None,
     color_frame_data: dict[int, dict[int, float]] | None = None,
+    fps: float | None = None,
 ) -> None:
     """Register the frame-change handler and populate streaming state."""
+    STREAM_STATE["fps"] = fps
     STREAM_STATE["db_path"] = db_path
     STREAM_STATE["frame_data"] = frame_data
     STREAM_STATE["color_frame_data"] = color_frame_data
@@ -195,6 +219,7 @@ def clear_stream_state() -> None:
     STREAM_STATE["min_frame"] = 0
     STREAM_STATE["max_frame"] = 0
     STREAM_STATE["frame_step"] = 1
+    STREAM_STATE["fps"] = None
     STREAM_STATE["agent_ids"] = []
     STREAM_STATE["id_to_index"] = {}
     STREAM_STATE["mode"] = None
